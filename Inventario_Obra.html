@@ -1392,8 +1392,32 @@ async function updateIndexedDbBar() {
 }
 
 // ======================== BACKUP CON ARCHIVO ÚNICO (sin mensajes falsos) ========================
-function storeFolderHandle(handle) { return new Promise((resolve,reject)=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); }; req.onsuccess=()=>{ let tx=req.result.transaction('handles','readwrite'); tx.objectStore('handles').put(handle,'folderHandle'); tx.oncomplete=()=>{ req.result.close(); resolve(); }; tx.onerror=e=>reject(e); }; req.onerror=e=>reject(e); }); }
-function getStoredFolderHandle() { return new Promise(resolve=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onsuccess=()=>{ let db=req.result; if(!db.objectStoreNames.contains('handles')){ db.close(); resolve(null); return; } let tx=db.transaction('handles','readonly'); let get=tx.objectStore('handles').get('folderHandle'); get.onsuccess=()=>{ db.close(); resolve(get.result||null); }; get.onerror=()=>{ db.close(); resolve(null); }; }; req.onerror=()=>resolve(null); }); }
+// Abre 'FaenaFolderDB' garantizando que el object store 'handles' exista. Si la base quedó creada
+// sin ese compartimento (estado inconsistente en algún navegador/origen), sube la versión para
+// forzar su reconstrucción en vez de asumir que ya está — así se evita el NotFoundError silencioso
+// que dejaba colgada la selección de carpeta/Excel sin ningún mensaje.
+function openHandlesDB() {
+  return new Promise((resolve, reject) => {
+    let req = indexedDB.open('FaenaFolderDB');
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); };
+    req.onsuccess = () => {
+      let db = req.result;
+      if (!db.objectStoreNames.contains('handles')) {
+        let nextVersion = db.version + 1;
+        db.close();
+        let req2 = indexedDB.open('FaenaFolderDB', nextVersion);
+        req2.onupgradeneeded = () => { if (!req2.result.objectStoreNames.contains('handles')) req2.result.createObjectStore('handles'); };
+        req2.onsuccess = () => resolve(req2.result);
+        req2.onerror = e => reject(e);
+        return;
+      }
+      resolve(db);
+    };
+    req.onerror = e => reject(e);
+  });
+}
+function storeFolderHandle(handle) { return openHandlesDB().then(db => new Promise((resolve, reject) => { let tx = db.transaction('handles', 'readwrite'); tx.objectStore('handles').put(handle, 'folderHandle'); tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = e => reject(e); })); }
+function getStoredFolderHandle() { return openHandlesDB().then(db => new Promise(resolve => { let tx = db.transaction('handles', 'readonly'); let get = tx.objectStore('handles').get('folderHandle'); get.onsuccess = () => { db.close(); resolve(get.result || null); }; get.onerror = () => { db.close(); resolve(null); }; })).catch(() => null); }
 async function selectFolder(){ if(!window.showDirectoryPicker){ showToast("API no soportada"); return null; } try{ let handle=await window.showDirectoryPicker(); let perm=await handle.requestPermission({mode:'readwrite'}); if(perm==='granted'){ await storeFolderHandle(handle); return handle; } else showToast("Permiso denegado"); }catch(e){ showToast("No se seleccionó carpeta"); } return null; }
 async function loadFolderHandle(){ let h=await getStoredFolderHandle(); if(h) try{ if((await h.requestPermission({mode:'readwrite'}))==='granted') return h; }catch(e){} return null; }
 async function getLatestBackupFile(handle){ try{ return await handle.getFileHandle('Backup_Faena_Latest.json',{create:false}); }catch(e){ return null; } }
@@ -1447,8 +1471,8 @@ async function reSelectFolder(){ let h=await selectFolder(); if(h) folderHandle=
 
 // ======================== INTEGRACIÓN CON EXCEL (Query RC / OC / ENTRADAS / SALIDAS) ========================
 // Reutiliza la misma IndexedDB 'FaenaFolderDB' que la carpeta de backup, con una clave distinta ('excelFileHandle')
-function storeExcelFileHandle(handle) { return new Promise((resolve,reject)=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); }; req.onsuccess=()=>{ let tx=req.result.transaction('handles','readwrite'); tx.objectStore('handles').put(handle,'excelFileHandle'); tx.oncomplete=()=>{ req.result.close(); resolve(); }; tx.onerror=e=>reject(e); }; req.onerror=e=>reject(e); }); }
-function getStoredExcelFileHandle() { return new Promise(resolve=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onsuccess=()=>{ let db=req.result; if(!db.objectStoreNames.contains('handles')){ db.close(); resolve(null); return; } let tx=db.transaction('handles','readonly'); let get=tx.objectStore('handles').get('excelFileHandle'); get.onsuccess=()=>{ db.close(); resolve(get.result||null); }; get.onerror=()=>{ db.close(); resolve(null); }; }; req.onerror=()=>resolve(null); }); }
+function storeExcelFileHandle(handle) { return openHandlesDB().then(db => new Promise((resolve, reject) => { let tx = db.transaction('handles', 'readwrite'); tx.objectStore('handles').put(handle, 'excelFileHandle'); tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = e => reject(e); })); }
+function getStoredExcelFileHandle() { return openHandlesDB().then(db => new Promise(resolve => { let tx = db.transaction('handles', 'readonly'); let get = tx.objectStore('handles').get('excelFileHandle'); get.onsuccess = () => { db.close(); resolve(get.result || null); }; get.onerror = () => { db.close(); resolve(null); }; })).catch(() => null); }
 async function selectExcelFile(){
   if(!window.showOpenFilePicker){ showToast('⚠️ Tu navegador no soporta esta función (usa Edge o Chrome)'); return null; }
   try{
