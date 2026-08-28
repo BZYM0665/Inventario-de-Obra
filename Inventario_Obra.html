@@ -1,0 +1,2327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventario Faena - Profesional</title>
+  <meta name="theme-color" content="#2563eb">
+  <meta name="description" content="Sistema de Control de Inventario de Faena">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Inventario Faena">
+  <link id="manifestLink" rel="manifest" href="#">
+  <script>
+    // Generar manifest dinámicamente como blob URL para funcionar en file://
+    (function(){
+      var icon = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="32" fill="#2563eb"/><text x="32" y="42" font-size="34" text-anchor="middle" font-family="Segoe UI Emoji">📦</text></svg>');
+      var manifest = {
+        name: "Inventario Faena",
+        short_name: "Inventario",
+        description: "Sistema de Control de Inventario de Faena",
+        start_url: window.location.href,
+        display: "standalone",
+        background_color: "#0f172a",
+        theme_color: "#2563eb",
+        icons: [
+          { src: icon, sizes: "64x64",   type: "image/svg+xml", purpose: "any maskable" },
+          { src: icon, sizes: "128x128", type: "image/svg+xml", purpose: "any maskable" },
+          { src: icon, sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
+          { src: icon, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+        ]
+      };
+      var blob = new Blob([JSON.stringify(manifest)], {type: "application/json"});
+      var url  = URL.createObjectURL(blob);
+      document.getElementById("manifestLink").href = url;
+    })();
+  </script>
+  <!-- Favicon mejorado -->
+  <script>
+    (function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#2563eb';
+      ctx.beginPath();
+      ctx.arc(32, 32, 30, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = 'white';
+      ctx.font = '38px "Segoe UI", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('📦', 32, 34);
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.href = canvas.toDataURL('image/png');
+      document.head.appendChild(link);
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script type="module">
+    // pdf.js: se usa para leer y re-renderizar páginas de PDF (necesario para comprimirlos).
+    // Se expone en window.pdfjsLib para poder usarlo desde el script principal (que no es un módulo).
+    // Si esto falla en cargar (ej: sin internet la primera vez), la app sigue funcionando:
+    // simplemente no habrá compresión automática de PDF y se aplicará el límite de tamaño de antes.
+    try {
+      const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@6.2.108/build/pdf.min.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.2.108/build/pdf.worker.min.mjs';
+      window.pdfjsLib = pdfjsLib;
+    } catch (e) {
+      console.log('pdf.js no se pudo cargar; la compresión automática de PDF no estará disponible.', e);
+    }
+  </script>
+  <style>
+    /* ========== ESTILOS ORIGINALES (sin cambios) ========== */
+    :root {
+      --primary: #2563eb; --primary-hover: #1d4ed8; --bg: #f8fafc; --surface: #ffffff;
+      --text: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --success: #10b981;
+      --warning: #f59e0b; --danger: #ef4444; --sidebar: #0f172a; --sidebar-hover: #1e293b;
+      --card-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    [data-theme="dark"] {
+      --primary: #3b82f6; --primary-hover: #60a5fa; --bg: #0b1120; --surface: #1e2a3a;
+      --text: #f8fafc; --text-muted: #cbd5e1; --border: #334155; --success: #34d399;
+      --warning: #fbbf24; --danger: #f87171; --sidebar: #030712; --sidebar-hover: #0f172a;
+      --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; transition: background 0.2s, color 0.2s; }
+    body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+    
+    /* Splash y login */
+    #splashScreen { position: fixed; inset: 0; background: linear-gradient(135deg, #0f172a, #1e293b); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10000; color: white; }
+    .splash-logo { width: 80px; height: 80px; background: var(--primary); border-radius: 50%; margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+    .progress-container { width: 250px; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; margin-bottom: 1rem; }
+    .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease; }
+    .splash-text { font-size: 0.9rem; color: #94a3b8; margin-bottom: 0.5rem; }
+    .splash-credits { font-size: 0.75rem; color: #64748b; margin-top: 2rem; letter-spacing: 0.5px; }
+
+    .login-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e293b, #0f172a); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 1rem; }
+    .login-wrapper { display: flex; width: 100%; max-width: 900px; background: var(--surface); border-radius: 16px; overflow: hidden; box-shadow: 0 15px 40px rgba(0,0,0,0.3); }
+    .login-info { flex: 1; background: #0f172a; color: white; padding: 2.5rem; display: flex; flex-direction: column; justify-content: space-between; }
+    .login-info h2 { color: var(--primary); margin-bottom: 1.5rem; font-size: 1.4rem; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem 1rem; font-size: 0.85rem; }
+    .info-item { display: flex; flex-direction: column; }
+    .info-label { color: #94a3b8; font-size: 0.75rem; }
+    .info-value { font-weight: 500; color: #e2e8f0; }
+    .login-form-container { flex: 1; padding: 2.5rem; display: flex; flex-direction: column; justify-content: center; }
+    .login-form-container h3 { text-align: center; margin-bottom: 1.5rem; color: var(--primary); }
+    .form-group { margin-bottom: 1rem; position: relative; }
+    .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 500; font-size: 0.9rem; }
+    input, select, textarea { width: 100%; padding: 0.7rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: var(--surface); color: var(--text); transition: 0.2s; }
+    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.2); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.7rem 1.2rem; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: var(--border); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-warning { background: var(--warning); color: #0f172a; }
+    .btn-sm { padding: 0.4rem 0.7rem; font-size: 0.8rem; }
+    .btn-block { width: 100%; }
+    .login-error { color: var(--danger); text-align: center; margin-top: 0.5rem; font-size: 0.85rem; display: none; }
+
+    /* Layout app */
+    .app-container { display: none; flex-direction: column; height: 100vh; }
+    .app-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.8rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .brand-area { display: flex; align-items: center; gap: 1rem; }
+    .brand-logo { height: 40px; width: auto; object-fit: contain; border-radius: 6px; }
+    .brand-text h3 { font-size: 1.1rem; line-height: 1.2; }
+    .brand-text small { color: var(--text-muted); font-size: 0.8rem; }
+    .header-actions { display: flex; gap: 0.5rem; align-items: center; }
+    .status-circle { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; transition: 0.2s; box-shadow: 0 0 2px rgba(0,0,0,0.2); }
+    .status-circle.green { background-color: #10b981; }
+    .status-circle.yellow { background-color: #fbbf24; }
+    .status-circle.orange { background-color: #f97316; }
+    .status-circle.red { background-color: #ef4444; }
+    .main-wrapper { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 165px; background: var(--sidebar); color: white; display: flex; flex-direction: column; transition: 0.3s; }
+    .sidebar-nav { flex: 1; padding: 0.5rem 0; overflow-y: auto; }
+    .nav-item { padding: 0.5rem 0.7rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; color: #cbd5e1; transition: 0.2s; border-left: 3px solid transparent; font-size: 0.8rem; white-space: nowrap; }
+    .nav-item:hover, .nav-item.active { background: var(--sidebar-hover); color: white; border-left-color: var(--primary); }
+    .user-bar { padding: 1rem 1.5rem; border-top: 1px solid #334155; font-size: 0.85rem; color: #94a3b8; }
+    .main-content { flex: 1; overflow-y: auto; padding: 1.5rem; background: var(--bg); }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 600; }
+    .calc-note { font-size: 0.85rem; color: var(--text-muted); background: var(--surface); padding: 0.5rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); display: inline-block; margin-bottom: 1rem; }
+    
+    /* Barra de almacenamiento (nueva) */
+    .storage-bar-container {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+    }
+    .storage-bar-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--text-muted);
+    }
+    .storage-bar {
+      height: 8px;
+      background: var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .storage-bar-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 10px;
+      transition: width 0.3s ease, background-color 0.3s;
+    }
+    
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.2rem; margin-bottom: 1.5rem; }
+    .stat-card { background: var(--surface); padding: 1.2rem; border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--card-shadow); }
+    .stat-card h3 { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+    .stat-card .value { font-size: 1.6rem; font-weight: 700; }
+    .alert-badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .alert-critical { background: #fee2e2; color: var(--danger); }
+    .alert-warning { background: #fef3c7; color: var(--warning); }
+    .alert-ok { background: #d1fae5; color: var(--success); }
+    
+    .alert-panel { background: #fff1f2; border: 1px solid #fecaca; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+    [data-theme="dark"] .alert-panel { background: #2a0a0a; border-color: #5c2a2a; }
+    .alert-panel h3 { color: var(--danger); display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 1rem; }
+    .critical-list { max-height: 280px; overflow-y: auto; padding-right: 0.5rem; margin-top: 0.5rem; }
+    .critical-list ul { margin: 0; padding-left: 0.5rem; list-style-type: none; }
+    .critical-list li { margin-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center; font-weight: 500; font-size: 0.9rem; border-bottom: 1px dashed var(--border); padding-bottom: 0.4rem; }
+    .prod-info { display: flex; align-items: center; gap: 0.8rem; flex: 1; }
+    .prod-meta { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+    
+    .table-container { background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.9rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: var(--border); font-weight: 600; color: var(--text-muted); position: sticky; top: 0; }
+    tr:hover { background: var(--bg); }
+    .row-critical { background: #fff1f2; border-left: 3px solid var(--danger); }
+    .row-warning { background: #fffbeb; border-left: 3px solid var(--warning); }
+    [data-theme="dark"] .row-critical { background: #3a1a1a; }
+    [data-theme="dark"] .row-warning { background: #3a351a; }
+    .code-tag { background: var(--bg); padding: 0.2rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); font-family: monospace; font-size: 0.8rem; }
+    /* Catálogo: filas más compactas y acciones (✏️/🗑️) una al lado de la otra, sin envolverse */
+    .table-compact { font-size: 0.78rem; }
+    .table-compact th, .table-compact td { padding: 0.55rem 0.8rem; }
+    .row-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: nowrap; }
+    .row-actions .btn-sm { padding: 0.3rem 0.55rem; font-size: 0.78rem; }
+    
+    .pagination { display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1rem; background: var(--surface); border-top: 1px solid var(--border); }
+    .pagination-info { font-size: 0.85rem; color: var(--text-muted); }
+    .pagination-controls { display: flex; gap: 0.3rem; }
+    .page-btn { padding: 0.4rem 0.6rem; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .page-btn:hover { background: var(--border); }
+    .page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .smart-search { position: relative; }
+    .smart-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; max-height: 250px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .smart-dropdown.show { display: block; }
+    .smart-dropdown li { padding: 0.7rem; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; }
+    .smart-dropdown li:hover { background: var(--bg); }
+    .selected-display { margin-top: 0.3rem; font-size: 0.85rem; color: var(--success); font-weight: 500; min-height: 1.2rem; }
+
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; padding: 1rem; backdrop-filter: blur(4px); }
+    .modal.active { display: flex; }
+    .modal-content { background: var(--surface); width: 100%; max-width: 600px; border-radius: 12px; padding: 2rem; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .close-modal { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    /* Formularios compactos dentro de modales: mismo estilo para todos (Registrar Entrada/Salida,
+       Corregir Entrada/Salida, Editar Material, Nueva/Renombrar Obra), sin tocar buscadores, login
+       ni el resto de la app, que usan las mismas clases base fuera de un modal. */
+    .modal-content { padding: 1.5rem 1.6rem; }
+    .modal-content .modal-header { margin-bottom: 1rem; padding-bottom: 0.7rem; border-bottom: 1px solid var(--border); }
+    .modal-content .modal-header h3 { font-size: 1.05rem; letter-spacing: 0.01em; }
+    .modal-content .form-row { gap: 0.7rem; }
+    .modal-content .form-group { margin-bottom: 0.65rem; }
+    .modal-content .form-group label { margin-bottom: 0.22rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+    .modal-content input, .modal-content select, .modal-content textarea { padding: 0.5rem 0.65rem; font-size: 0.88rem; border-radius: 7px; }
+    .modal-content .selected-display { font-size: 0.8rem; margin-top: 0.2rem; }
+    .modal-content .btn-block { margin-top: 0.3rem; }
+    .modal-content .calc-note { font-size: 0.78rem; padding: 0.45rem 0.65rem; margin-bottom: 0.65rem; }
+    .config-section { margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+    .config-section h3 { margin-bottom: 0.8rem; }
+    /* Configuración: grupos y tarjetas desplegables */
+    .config-group { margin-bottom: 1.8rem; }
+    .config-group-label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 0.6rem; padding-left: 0.1rem; }
+    .config-group-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .config-acc { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--card-shadow); margin-bottom: 0.7rem; overflow: hidden; }
+    .config-acc[open] { box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+    .config-acc summary { list-style: none; cursor: pointer; padding: 0.95rem 1.2rem; display: flex; align-items: center; gap: 0.7rem; font-weight: 600; font-size: 0.95rem; user-select: none; }
+    .config-acc summary::-webkit-details-marker { display: none; }
+    .config-acc summary:hover { background: var(--bg); }
+    .config-acc summary .chev { margin-left: auto; color: var(--text-muted); transition: transform 0.2s; font-size: 0.8rem; }
+    .config-acc[open] summary .chev { transform: rotate(90deg); }
+    .config-acc summary .acc-sub { font-weight: 400; font-size: 0.78rem; color: var(--text-muted); margin-left: 0.3rem; }
+    .config-acc-body { padding: 0 1.2rem 1.2rem; border-top: 1px solid var(--border); padding-top: 1.1rem; }
+    .config-acc.config-acc-danger { border-color: #fecaca; }
+    .config-acc.config-acc-danger summary { color: var(--danger); }
+    [data-theme="dark"] .config-acc.config-acc-danger summary { color: #f87171; }
+    .config-acc.config-acc-danger[open] { box-shadow: 0 4px 14px rgba(239,68,68,0.12); }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
+    .tag { background: var(--bg); border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+    .tag button { background: none; border: none; cursor: pointer; font-weight: bold; }
+    .tag button.edit-btn { color: var(--primary); }
+    .tag button.delete-btn { color: var(--danger); }
+    .theme-toggle { background: none; border: none; font-size: 1.3rem; cursor: pointer; padding: 0.4rem; color: var(--text-muted); }
+    .theme-toggle:hover { color: var(--primary); }
+    
+    .footer-credits { text-align: center; padding: 1rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 2rem; }
+    
+    @media (max-width: 768px) {
+      .login-wrapper { flex-direction: column; }
+      .main-wrapper { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; overflow-x: auto; }
+      .user-bar { display: none; }
+      .sidebar-nav { flex-direction: row; }
+      .nav-item { padding: 0.8rem 1rem; border-left: none; border-bottom: 3px solid transparent; }
+      .nav-item.active { border-bottom-color: var(--primary); }
+      .form-row { grid-template-columns: 1fr; }
+    }
+    .hidden { display: none !important; }
+    /* toast: estilos en línea, sin CSS externo */
+    .movements-table-wrapper { max-height: 250px; overflow-y: auto; display: block; }
+    .movements-table-wrapper table { width: 100%; display: table; }
+    .instructions-box { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; line-height: 1.6; }
+    .instructions-box h4 { color: var(--primary); margin: 1rem 0 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+
+    /* ========== ARCHIVOS / GUÍAS (nueva, por obra) ========== */
+    .upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 1.8rem; text-align: center; cursor: pointer; background: var(--surface); margin-bottom: 1.2rem; display: block; }
+    .upload-zone:hover { border-color: var(--primary); background: var(--bg); }
+    .upload-zone .uz-icon { font-size: 1.8rem; }
+    .upload-zone .uz-title { font-weight: 600; margin-top: 0.4rem; }
+    .upload-zone .uz-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.3rem; }
+    .archivos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+    .archivo-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: var(--card-shadow); display: flex; flex-direction: column; }
+    .archivo-thumb { width: 100%; height: 110px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; color: var(--text-muted); cursor: pointer; overflow: hidden; }
+    .archivo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .archivo-info { padding: 0.5rem 0.6rem 0; font-size: 0.72rem; }
+    .archivo-info .archivo-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .archivo-info .archivo-meta { color: var(--text-muted); margin-top: 0.15rem; }
+    .archivo-actions { display: flex; gap: 0.3rem; padding: 0.5rem 0.6rem 0.6rem; margin-top: auto; }
+    .archivo-empty { color: var(--text-muted); padding: 1.2rem; text-align: center; grid-column: 1/-1; }
+  </style>
+</head>
+<body>
+<div id="splashScreen">
+  <div class="splash-logo">📦</div>
+  <h2 style="margin-bottom:0.5rem;">Inventario Faena</h2>
+  <div class="progress-container"><div class="progress-bar" id="splashProgress"></div></div>
+  <div class="splash-text" id="splashStatus">Preparando auto-backup...</div>
+  <div class="splash-credits">Creado por Roberto Muñoz I | Supervisor HVAC</div>
+</div>
+
+<div id="loginScreen" class="login-screen">
+  <div class="login-wrapper">
+    <div class="login-info">
+      <h2>📋 Información del Sistema</h2>
+      <div class="info-grid">
+        <div class="info-item"><span class="info-label">Versión</span><span class="info-value">Profesional</span></div>
+        <div class="info-item"><span class="info-label">Modo</span><span class="info-value">Offline + Sync</span></div>
+        <div class="info-item"><span class="info-label">Backup</span><span class="info-value">Archivo único</span></div>
+        <div class="info-item"><span class="info-label">Soporte</span><span class="info-value">Chrome / Edge</span></div>
+      </div>
+      <div style="margin-top:2rem; font-size:0.75rem; color:#64748b; line-height:1.4;">Sistema diseñado para control interno de obra.</div>
+    </div>
+    <div class="login-form-container">
+      <h3>🔐 Acceso Seguro</h3>
+      <form id="loginForm">
+        <div class="form-group"><label>Usuario</label><input type="text" id="loginUser" required></div>
+        <div class="form-group"><label>Contraseña</label><input type="password" id="loginPass" required></div>
+        <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+        <p class="login-error" id="loginError">⚠️ Credenciales inválidas</p>
+      </form>
+      <div style="margin-top:1rem; font-size:0.8rem; color:var(--text-muted); text-align:center;">Demo: admin/admin | supervisor/supervisor | bodega/bodega</div>
+    </div>
+  </div>
+</div>
+
+<div id="appContainer" class="app-container">
+  <header class="app-header">
+    <div class="brand-area">
+      <img id="headerLogo" class="brand-logo hidden" alt="Logo Obra">
+      <div class="brand-text"><h3 id="headerProjectName">Inventario de Faena</h3><small id="headerProjectTag">Sistema de Control Interno</small></div>
+    </div>
+    <div class="header-actions">
+      <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:0.3rem 0.6rem;">
+        <span style="font-size:0.8rem; color:var(--text-muted);">🏗️ Obra:</span>
+        <select id="headerObraSelect" onchange="cambiarObraActiva(this.value)" style="border:none; background:transparent; font-weight:600; padding:0.2rem; width:auto; min-width:140px;"></select>
+      </div>
+      <div id="backupStatusCircle" class="status-circle green" title="Último backup" onclick="showBackupInfo()"></div>
+      <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+    </div>
+  </header>
+  <div class="main-wrapper">
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <div class="nav-item active" data-tab="dashboard">Dashboard</div>
+        <div class="nav-item" data-tab="catalogo">Catálogo Materiales</div>
+        <div class="nav-item" data-tab="inventario">Inventario (Stock)</div>
+        <div class="nav-item" data-tab="entradas">Entradas</div>
+        <div class="nav-item" data-tab="salidas">Salidas</div>
+        <div class="nav-item" data-tab="archivos">Archivos (Guías)</div>
+        <div class="nav-item" data-tab="reportes">Reportes</div>
+        <div class="nav-item" data-tab="seguimiento">Seguimiento Excel</div>
+        <div class="nav-item" data-tab="instrucciones">Instrucciones</div>
+        <div class="nav-item admin-sup-only" data-tab="config">Configuración</div>
+      </nav>
+      <div class="user-bar"><div id="userNameDisplay">Usuario</div><button class="btn btn-outline btn-sm" style="margin-top:0.5rem;" onclick="logout()">🚪 Cerrar Sesión</button></div>
+    </aside>
+    <main class="main-content">
+      <!-- Dashboard -->
+      <section id="tab-dashboard" class="tab-content">
+        <div class="table-container" style="padding:1.2rem 1.5rem; margin-bottom:1.5rem; border-left:4px solid var(--primary);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+            <div>
+              <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">🏗️ Obra Activa</div>
+              <div id="dashboardObraNombre" style="font-size:1.3rem; font-weight:700; color:var(--primary);">—</div>
+              <div id="dashboardObraTag" style="font-size:0.85rem; color:var(--text-muted);"></div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <select id="dashboardObraSelect" onchange="cambiarObraActiva(this.value)" style="min-width:180px;"></select>
+              <button class="btn btn-primary btn-sm" onclick="abrirNuevaObra()">➕ Nueva Obra</button>
+              <button class="btn btn-outline btn-sm" onclick="abrirRenombrarObra()">✏️ Renombrar</button>
+              <button class="btn btn-danger btn-sm" onclick="abrirEliminarObra()">🗑️ Eliminar Obra</button>
+            </div>
+          </div>
+        </div>
+        <div id="alertContainer"></div>
+        <div class="stats-grid" id="statsGrid"></div>
+        <div class="table-container">
+          <h3 style="padding:1rem;">📉 Últimos Movimientos</h3>
+          <div class="movements-table-wrapper">
+            <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Material</th><th>Cant.</th><th>Ref/Doc</th></tr></thead><tbody id="recentMovements"></tbody></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Catálogo de Materiales (con barra de almacenamiento y botón editar) -->
+      <section id="tab-catalogo" class="tab-content hidden">
+        <div class="page-header"><div><h1>Catálogo de Materiales</h1><div class="calc-note">⚠️ Aquí se crean los materiales nuevos. Unidades y categorías configurables en ⚙️.</div></div></div>
+        <!-- BARRAS DE ALMACENAMIENTO (lado a lado) -->
+        <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem;">
+        <div class="storage-bar-container" style="flex:1; min-width:280px; margin-bottom:0;">
+          <div class="storage-bar-header"><span>💾 localStorage (materiales y movimientos)</span><span id="storageCount">0 KB / 5 MB</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="storageFill" style="width:0%; background-color:#10b981;"></div></div>
+          <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; display:flex; justify-content:space-between;">
+            <span id="storageUsedDetail">Usado: 0 KB</span>
+            <span id="storageFreeDetail">Disponible: ~5 MB</span>
+          </div>
+          <div style="font-size:0.65rem; color:var(--text-muted); margin-top:0.3rem;">📌 5 MB es el límite estándar real de Edge/Chrome para este tipo de almacenamiento. No es una garantía exacta de tu equipo, pero sí el comportamiento documentado del navegador.</div>
+        </div>
+        <div class="storage-bar-container" style="flex:1; min-width:280px; margin-bottom:0;">
+          <div class="storage-bar-header"><span>🗂️ IndexedDB (guías y archivos)</span><span id="idbCount">Calculando...</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="idbFill" style="width:0%; background-color:#10b981;"></div></div>
+          <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; display:flex; justify-content:space-between;">
+            <span id="idbUsedDetail">Usado: —</span>
+            <span id="idbFreeDetail">Disponible: —</span>
+          </div>
+          <div style="font-size:0.65rem; color:var(--text-muted); margin-top:0.3rem;">📌 Esta es la cuota real de tu navegador en este equipo (no un número fijo) — depende de tu disco libre, por eso es mucho más grande que los 5 MB de arriba.</div>
+        </div>
+        </div>
+        <div class="table-container" style="padding:1rem 1.5rem;">
+          <input type="text" id="searchCatalog" placeholder="🔍 Buscar por código o nombre..." style="width:100%; margin-bottom:1rem;" oninput="handleSearch('catalog')">
+          <div id="materialForm" style="display:grid; grid-template-columns: 1fr 1.5fr 1fr 1fr 0.5fr 0.5fr 1fr; gap:0.5rem; align-items:end;">
+            <div><label>Código</label><input type="text" id="matCode" placeholder="HVAC-01" oninput="this.value=this.value.toUpperCase()"></div>
+            <div><label>Nombre</label><input type="text" id="matName" placeholder="Cable THHN"></div>
+            <div><label>Categoría</label><select id="matCategory"><option value="">Cargando...</option></select></div>
+            <div><label>Unidad</label><select id="matUnit"><option value="">Cargando...</option></select></div>
+            <div><label>Stock Inicial</label><input type="number" id="matStock" value="0"></div>
+            <div><label>Mínimo</label><input type="number" id="matMin" value="5"></div>
+            <button type="button" id="btnAgregarMaterial" onclick="agregarMaterial()" style="background:#2563eb;color:white;border:none;border-radius:6px;padding:0.7rem 1rem;font-weight:600;cursor:pointer;font-size:0.9rem;">➕ Agregar</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="table-compact"><thead><tr><th>Código</th><th>Material</th><th>Categoría</th><th>Unidad</th><th>Stock Actual</th><th>Mín</th><th>Acciones</th></tr></thead><tbody id="catalogTable"></tbody></table>
+          <div class="pagination" id="paginationCatalog"></div>
+        </div>
+      </section>
+
+      <!-- Inventario / Stock -->
+      <section id="tab-inventario" class="tab-content hidden">
+        <div class="page-header">
+          <div><h1>Inventario / Stock Actual</h1><div class="calc-note">💡 Stock = Σ Entradas - Σ Salidas. Alertas automáticas. Para exportar PDF/Excel, ve a 📈 Reportes.</div></div>
+          <div class="header-actions">
+            <input type="text" id="searchInventory" placeholder="🔍 Buscar..." style="width:200px;" oninput="handleSearch('inventory')">
+          </div>
+        </div>
+        <div class="table-container">
+          <table><thead><tr><th>Código</th><th>Material</th><th>Categoría</th><th>Unidad</th><th>Stock</th><th>Mín</th><th>Estado</th></tr></thead><tbody id="inventoryTable"></tbody></table>
+          <div class="pagination" id="paginationInventory"></div>
+        </div>
+      </section>
+
+      <!-- Entradas -->
+      <section id="tab-entradas" class="tab-content hidden">
+        <div class="page-header">
+          <h1>Registro de Entradas</h1>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-primary btn-sm" onclick="openModal('entryModal')">📥 Nueva Entrada</button>
+            <button class="btn btn-outline btn-sm" onclick="generarPDFEntradas()">🖨️ Descargar PDF</button>
+            <button class="btn btn-danger btn-sm" onclick="clearAllEntries()">🗑️ Limpiar todo</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <input type="text" id="searchEntries" placeholder="🔍 Buscar..." style="width:100%; margin:0 1rem 1rem;" oninput="handleSearch('entries')">
+          <div style="overflow-x:auto;">
+          <table class="table-compact"><thead><tr><th>Fecha</th><th>Código</th><th>Material</th><th>Cant.</th><th>Und.</th><th>Guía</th><th>Receptor</th><th>Pendiente</th><th>Acciones</th></tr></thead><tbody id="entriesTable"></tbody></table>
+          </div>
+          <div class="pagination" id="paginationEntries"></div>
+        </div>
+      </section>
+
+      <!-- Salidas -->
+      <section id="tab-salidas" class="tab-content hidden">
+        <div class="page-header">
+          <h1>Registro de Salidas</h1>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-outline btn-sm" onclick="openModal('exitModal')">📤 Nueva Salida</button>
+            <button class="btn btn-outline btn-sm" onclick="generarPDFSalidas()">🖨️ Descargar PDF</button>
+            <button class="btn btn-danger btn-sm" onclick="clearAllExits()">🗑️ Limpiar todo</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <input type="text" id="searchExits" placeholder="🔍 Buscar..." style="width:100%; margin:0 1rem 1rem;" oninput="handleSearch('exits')">
+          <div style="overflow-x:auto;">
+          <table class="table-compact"><thead><tr><th>Fecha</th><th>Código</th><th>Material</th><th>Cant.</th><th>Und.</th><th>N° O.T.</th><th>Esp.</th><th>Solicitante</th><th>Acciones</th></tr></thead><tbody id="exitsTable"></tbody></table>
+          </div>
+          <div class="pagination" id="paginationExits"></div>
+        </div>
+      </section>
+
+      <!-- Archivos / Guías (nueva, por obra) -->
+      <section id="tab-archivos" class="tab-content hidden">
+        <div class="page-header">
+          <div><h1>Archivos y Guías</h1><div class="calc-note">📎 Sube fotos o PDF de tus guías de despacho. Quedan guardadas solo para la <b>obra activa</b> (<span id="archivosObraNombre">—</span>) — al cambiar de obra, no las verás, pero siguen intactas. Se incluyen en tu backup de carpeta (OneDrive), así que tu equipo también las verá.</div></div>
+        </div>
+        <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem;">
+        <div class="storage-bar-container" style="flex:1; min-width:280px; margin-bottom:0;">
+          <div class="storage-bar-header"><span>💾 localStorage (materiales y movimientos, no tus guías)</span><span id="storageCountArchivos">0 KB / 5 MB</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="storageFillArchivos" style="width:0%; background-color:#10b981;"></div></div>
+          <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; display:flex; justify-content:space-between;">
+            <span id="storageUsedDetailArchivos">Usado: 0 KB</span>
+            <span id="storageFreeDetailArchivos">Disponible: ~5 MB</span>
+          </div>
+        </div>
+        <div class="storage-bar-container" style="flex:1; min-width:280px; margin-bottom:0;">
+          <div class="storage-bar-header"><span>🗂️ IndexedDB (aquí viven tus guías)</span><span id="idbCountArchivos">Calculando...</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill" id="idbFillArchivos" style="width:0%; background-color:#10b981;"></div></div>
+          <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem; display:flex; justify-content:space-between;">
+            <span id="idbUsedDetailArchivos">Usado: —</span>
+            <span id="idbFreeDetailArchivos">Disponible: —</span>
+          </div>
+          <div style="font-size:0.65rem; color:var(--text-muted); margin-top:0.3rem;">📌 Cuota real de este navegador en este equipo (depende de tu disco libre).</div>
+        </div>
+        </div>
+        <label class="upload-zone">
+          <div class="uz-icon">📤</div>
+          <div class="uz-title">Subir guía (foto o PDF)</div>
+          <div class="uz-sub">Las fotos se comprimen siempre. Los PDF de hasta 5 MB se guardan tal cual (con su texto seleccionable intacto); solo los más pesados se comprimen. Puedes seleccionar varias a la vez.</div>
+          <input type="file" id="archivoUploadInput" accept="image/*,.pdf" multiple style="display:none;" onchange="handleArchivoUpload(this)">
+        </label>
+        <div class="archivos-grid" id="archivosGrid"></div>
+      </section>
+
+      <!-- Reportes -->
+      <section id="tab-reportes" class="tab-content hidden">
+        <div class="page-header"><h1>Exportar Reportes</h1></div>
+        <div class="calc-note" style="margin-bottom:1.2rem; display:block;">📌 El reporte incluye: portada con resumen ejecutivo, Stock actual, Entradas y Salidas — todo correspondiente a la <b>obra activa</b> (<span id="reportesObraNombre">—</span>).</div>
+        <div class="stats-grid">
+          <div class="stat-card"><h3>📄 PDF Completo</h3><p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.8rem;">Portada + Resumen + Stock + Entradas + Salidas</p><button class="btn btn-primary btn-block" onclick="generatePDF()">Descargar PDF</button></div>
+          <div class="stat-card"><h3>📊 Excel Completo</h3><p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.8rem;">Hojas: Resumen, Stock, Entradas, Salidas</p><button class="btn btn-success btn-block" onclick="generateExcel()">Descargar Excel</button></div>
+        </div>
+      </section>
+
+      <!-- Seguimiento Excel -->
+      <section id="tab-seguimiento" class="tab-content hidden">
+        <div class="page-header"><h1>Seguimiento RC → OC → Recepción → Entrada</h1></div>
+        <div class="calc-note" style="margin-bottom:1rem; display:block;">📌 Datos de referencia de <b id="segObraNombre">—</b> según el último Excel revisado. Nada de esto afecta tu stock — es información de Bodega Central, no tu inventario. <span id="segFileStatus">Aún no se ha revisado ningún archivo Excel.</span></div>
+        <div style="margin-bottom:1.5rem;"><button class="btn btn-primary btn-sm" onclick="revisarExcelActualizado(true)">🔄 Revisar Excel ahora</button></div>
+        <div class="stats-grid">
+          <div class="stat-card"><h3>🕒 Solicitado sin Orden de Compra</h3><div class="value" id="segRcCount">0</div></div>
+          <div class="stat-card"><h3>📦 Comprado sin Recepción Completa</h3><div class="value" id="segOcCount">0</div></div>
+          <div class="stat-card"><h3>📦 En Bodega Central sin Despachar</h3><div class="value" id="segSinAsignarCount">0</div></div>
+          <div class="stat-card"><h3>❓ Códigos sin Catalogar</h3><div class="value" id="segCodigosCount">0</div></div>
+        </div>
+        <div class="table-container">
+          <h3 style="padding:1rem;">🕒 Requisiciones (RC) sin Orden de Compra asociada</h3>
+          <div class="movements-table-wrapper"><table><thead><tr><th>Fecha</th><th>N° Req</th><th>Código</th><th>Producto</th><th>Cantidad</th><th>Solicitó</th><th>Estado</th></tr></thead><tbody id="segRcTable"></tbody></table></div>
+        </div>
+        <div class="table-container">
+          <h3 style="padding:1rem; display:flex; justify-content:space-between; align-items:center;"><span>📦 Órdenes de Compra (OC) con saldo pendiente de recepción</span><button class="btn btn-outline btn-sm" onclick="generarPDFOCPendientes()">🖨️ Descargar PDF</button></h3>
+          <div class="movements-table-wrapper"><table><thead><tr><th>Fecha</th><th>N° OC</th><th>Código</th><th>Producto</th><th>Proveedor</th><th>Saldo</th><th>Estado</th></tr></thead><tbody id="segOcTable"></tbody></table></div>
+        </div>
+        <div class="table-container">
+          <h3 style="padding:1rem; display:flex; justify-content:space-between; align-items:center;"><span>📦 En Bodega Central sin Despachar a tu Obra</span><span><button class="btn btn-outline btn-sm" onclick="generarPDFBodegaCentralPendiente()">🖨️ Descargar PDF</button> <button class="btn btn-outline btn-sm" onclick="generarExcelBodegaCentralPendiente()">📊 Descargar Excel</button></span></h3>
+          <div class="movements-table-wrapper"><table><thead><tr><th>Última Entrada</th><th>Código</th><th>Producto</th><th>Pendiente de Despacho</th><th>Acción</th></tr></thead><tbody id="segSinAsignarTable"></tbody></table></div>
+        </div>
+        <div class="table-container">
+          <h3 style="padding:1rem;">❓ Códigos del Excel que no están en tu catálogo</h3>
+          <div class="movements-table-wrapper"><table><thead><tr><th>Código</th><th>Nombre (Excel)</th><th>Unidad (Excel)</th><th>Acción</th></tr></thead><tbody id="segCodigosTable"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- Instrucciones -->
+      <section id="tab-instrucciones" class="tab-content hidden">
+        <div class="page-header"><h1>Instrucciones de Uso y Sincronización</h1></div>
+        <div class="instructions-box">
+          <h2>📘 Guía Operativa</h2>
+          <p>Esta aplicación funciona 100% offline. Optimizada para manejar 2,000+ materiales sin lentitud.</p>
+          <h4>📦 1. Gestión de Materiales, Unidades y Categorías</h4>
+          <ul><li>Ve a <b>📦 Catálogo Materiales</b> para crear nuevos ítems.</li><li>Las unidades y categorías se gestionan en <b>⚙️ Configuración</b>.</li><li>La barra de almacenamiento muestra el uso real en bytes de tu localStorage (materiales, movimientos y archivos) respecto al límite práctico de 5 MB del navegador.</li></ul>
+          <h4>✏️ 2. Edición de Materiales</h4>
+          <ul><li>En el catálogo, junto al botón de eliminar, hay un lápiz para editar código, nombre, categoría, unidad y mínimo. El stock actual no se edita porque se calcula automáticamente.</li></ul>
+          <h4>☁️ 3. Sincronización con Archivo Único</h4>
+          <ul><li>Cada vez que guardas o cierras sesión, se sobrescribe el archivo <code>Backup_Faena_Latest.json</code> en tu carpeta seleccionada.</li><li>Ya no se acumulan archivos con fechas; solo el último backup es relevante.</li><li>Ese mismo archivo incluye las guías subidas en <b>🗂️ Archivos</b>, así que tu equipo también las recibe al sincronizar.</li></ul>
+          <h4>🗑️ 4. Eliminación de Registros</h4>
+          <ul><li>En <b>Entradas</b> y <b>Salidas</b> cada fila tiene botones ✏️ (editar) y 🗑️ (eliminar individual).</li><li>También hay un botón <b>"Limpiar todo"</b> arriba que borra todos los registros de la tabla y recalcula el stock.</li></ul>
+          <h4>🗂️ 5. Archivos y Guías por Obra</h4>
+          <ul><li>En <b>🗂️ Archivos</b> puedes subir fotos o PDF de tus guías de despacho. Quedan asociadas a la obra activa: al cambiar de obra, solo ves las guías de esa obra (las demás no se pierden, solo se ocultan).</li><li>Las guías se guardan aparte del límite de 5 MB (que es solo para materiales y movimientos), con muchísimo más espacio disponible. Las fotos siempre se comprimen. Los PDF de hasta 5 MB se guardan tal cual, con su texto seleccionable intacto; solo los PDF de más de 5 MB se comprimen (para que la app siga cargando rápido).</li><li>Al registrar una <b>Nueva Entrada</b> puedes adjuntar una guía ya subida (o subir una nueva ahí mismo) como respaldo de ese movimiento.</li><li>Si eliminas una obra completa, sus guías se eliminan junto con ella.</li></ul>
+          <h4>💾 6. Almacenamiento: dos límites distintos</h4>
+          <ul><li>La barra de 5 MB en Catálogo y Archivos mide <b>localStorage</b> (materiales, entradas, salidas y configuración) — este límite lo pone el navegador y no se puede ampliar.</li><li>La línea "Cuota real de este navegador" mide <b>todo</b> lo que ocupa la app en tu disco (incluye las guías). Ese número depende del espacio libre en tu computador, así que puede ser de varios GB.</li></ul>
+          <h4>📊 7. Bodega Central (información de la Query — RC / OC / Entradas / Salidas)</h4>
+          <ul>
+            <li>En <b>⚙️ Configuración</b>, sección "Sincronización con Excel", selecciona una vez el archivo Excel del Query de tu empresa. La app recuerda la ubicación, igual que con la carpeta de backup — no hay que volver a "subir" el archivo cada vez.</li>
+            <li>Cada obra necesita su propio <b>Código de Bodega/CC</b> (el mismo código que usa tu empresa en las columnas <code>CodiCC</code>/<code>CodBode</code> del Excel). Se configura en "➕ Nueva Obra" o "✏️ Renombrar" desde el Dashboard. Sin este código, la app no puede saber qué filas del Excel pertenecen a esta obra.</li>
+            <li>Si además pones una <b>Fecha de Corte</b> a la obra, Seguimiento Excel ignora todo lo anterior a esa fecha — útil para empezar una etapa nueva sobre el mismo Código de Bodega/CC de una obra anterior, sin arrastrar historial que ya se dio por cerrado.</li>
+            <li>Al iniciar sesión, y cada vez que tocas "🔄 Revisar ahora", se abre un cuadro de diálogo — siempre — recordándote actualizar el Query en Excel, mostrando hace cuántos días se guardó el archivo, y un resumen del estado actual de Seguimiento Excel.</li>
+            <li>Si el archivo Excel lleva <b>7 días o más</b> sin guardarse (según la fecha de modificación del archivo en tu disco, no la fecha de los datos), el recordatorio se pone en rojo.</li>
+            <li><b>Bodega Central es 100% información — nunca crea Entradas ni Salidas reales, ni toca tu stock.</b> RC, OC, y el resumen de Entradas/Salidas del Excel son solo para que sepas qué está pasando del otro lado. Lo único que cuenta como tu inventario real es lo que tú registras a mano.</li>
+            <li>Los códigos de producto que traiga el Excel y no estén en tu catálogo se listan en Seguimiento Excel — es informativo, no bloquea nada, y nunca se crean solos.</li>
+          </ul>
+          <h4>🔎 8. Panel de Seguimiento Excel</h4>
+          <ul>
+            <li>Muestra 4 cosas: requisiciones (RC) sin Orden de Compra asociada, Órdenes de Compra con saldo pendiente de recepción, material que entró a Bodega Central y aún no se ha despachado (comparando Entradas contra Salidas del Excel, por código), y códigos del Excel sin catalogar.</li>
+            <li>El botón "➕ Registrar en mi Obra" en el panel "En Bodega Central sin Despachar" es solo un atajo: prellena el formulario de Nueva Entrada con el material y la cantidad sugerida, para que no tengas que buscarlo a mano. Tú ajustas la cantidad real, pones Nombre y Cargo, y guardas — esa Entrada es tuya, cuenta en tu stock como cualquier otra. El número de "pendiente" que muestra el panel <b>baja cuando tú registras el material</b> en tus propias Entradas — ya no depende de si Bodega Central marcó la salida en su Excel. La fila no desaparece sola: desaparece solo cuando, con tus propios registros, alcanzas la cantidad que Bodega Central marcó como ingresada bajo tu código de bodega. Ese mismo pendiente por material también se muestra como columna en la pestaña "📤 Entradas".</li>
+            <li>El vínculo entre RC y OC se basa en el estado que trae el propio Excel (no hay un número de folio que una una requisición con una orden específica), así que este panel muestra tendencias y pendientes, no una trazabilidad línea por línea perfecta.</li>
+          </ul>
+          <h4>📝 9. Observaciones en Entradas y Salidas</h4>
+          <ul>
+            <li>Campo de texto libre y opcional, disponible al crear o corregir una Entrada o Salida.</li>
+            <li>Si una fila tiene Observación, aparece un punto rojo junto al nombre del material en la tabla — al hacer clic, se muestra el texto completo.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Configuración -->
+      <section id="tab-config" class="tab-content hidden">
+        <div class="page-header"><h1>Configuración</h1></div>
+
+        <div class="config-group">
+          <div class="config-group-label">General</div>
+          <details class="config-acc" open>
+            <summary>Identidad de la Obra <span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div class="form-group"><label>Logo</label><input type="file" id="configLogo" accept="image/*"></div>
+              <div class="form-row">
+                <div><label>Nombre Obra</label><input type="text" id="configProjectName"></div>
+                <div><label>Tag / Descripción</label><input type="text" id="configProjectTag"></div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="saveProjectConfig()">💾 Guardar Identidad</button>
+            </div>
+          </details>
+          <details class="config-acc">
+            <summary>Usuarios <span class="acc-sub" id="cfgUsersCount"></span><span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <table style="width:100%;"><thead><tr><th>Usuario</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
+            </div>
+          </details>
+        </div>
+
+        <div class="config-group">
+          <div class="config-group-label">Catálogo Base</div>
+          <details class="config-acc">
+            <summary>Unidades de Medida <span class="acc-sub" id="cfgUnitsCount"></span><span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div class="tag-list" id="unitsList"></div>
+              <div style="display:flex; gap:0.5rem;"><input type="text" id="newUnitInput" placeholder="Nueva unidad (ej: carrete)"><button class="btn btn-sm btn-primary" onclick="addConfigItem('units', 'newUnitInput')">+</button></div>
+            </div>
+          </details>
+          <details class="config-acc">
+            <summary>Categorías de Productos <span class="acc-sub" id="cfgCategoriesCount"></span><span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div class="tag-list" id="categoriesList"></div>
+              <div style="display:flex; gap:0.5rem;"><input type="text" id="newCategoryInput" placeholder="Nueva categoría (ej: Ferretería)"><button class="btn btn-sm btn-primary" onclick="addConfigItem('categories', 'newCategoryInput')">+</button></div>
+            </div>
+          </details>
+          <details class="config-acc">
+            <summary>Receptores &amp; Especialidades <span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div class="form-row">
+                <div><label>Cargos (Entradas)</label><div class="tag-list" id="receiversList"></div><div style="display:flex; gap:0.5rem;"><input type="text" id="newReceiverInput"><button class="btn btn-sm btn-primary" onclick="addConfigItem('receivers', 'newReceiverInput')">+</button></div></div>
+                <div><label>Especialidades (Salidas)</label><div class="tag-list" id="specialtiesList"></div><div style="display:flex; gap:0.5rem;"><input type="text" id="newSpecialtyInput"><button class="btn btn-sm btn-primary" onclick="addConfigItem('specialties', 'newSpecialtyInput')">+</button></div></div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="config-group">
+          <div class="config-group-label">Sincronización y Respaldo</div>
+          <details class="config-acc">
+            <summary>Sincronización con Carpeta (Archivo Único) <span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="manualSaveToFolder()">💾 Guardar en carpeta ahora</button>
+                <button class="btn btn-outline" onclick="reSelectFolder()">📁 Cambiar carpeta</button>
+                <label class="btn btn-outline" style="cursor:pointer;">📂 Importar backup manual (emergencia)
+                  <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importJSON(this)">
+                </label>
+              </div>
+              <p class="calc-note" style="margin-top:0.8rem;">📌 Al cerrar sesión también se guarda automáticamente en la carpeta seleccionada (siempre sobrescribiendo el mismo archivo).</p>
+            </div>
+          </details>
+          <details class="config-acc">
+            <summary>Sincronización con Excel (Query RC/OC/Entradas/Salidas) <span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="seleccionarYRevisarExcel()">📂 Seleccionar archivo Excel</button>
+                <button class="btn btn-outline" onclick="revisarExcelActualizado(true)">🔄 Revisar ahora</button>
+              </div>
+              <p class="calc-note" style="margin-top:0.8rem;" id="excelSyncStatus">Aún no se ha seleccionado un archivo Excel.</p>
+              <p class="calc-note" style="margin-top:0.5rem;">📌 Cada obra necesita su <b>Código de Bodega/CC</b> (el mismo que usa tu empresa en el Excel) para poder filtrar correctamente sus datos. Se configura en "➕ Nueva Obra" o "✏️ Renombrar" desde el Dashboard.</p>
+              <p class="calc-note" style="margin-top:0.5rem;">📌 Al iniciar sesión, y cada vez que tocas "🔄 Revisar ahora", se abre un cuadro de diálogo — siempre, haya o no movimientos nuevos — recordándote actualizar el Query y mostrando hace cuántos días se guardó el archivo. RC y OC son solo referencia — no afectan tu stock. Los códigos de producto que el Excel traiga y no estén en tu catálogo se muestran en <b>Seguimiento Excel</b> para que los revises tú, nunca se crean solos.</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="config-group">
+          <div class="config-group-label">Zona Avanzada</div>
+          <details class="config-acc config-acc-danger">
+            <summary>Reparación de Base de Datos <span class="acc-sub">acciones destructivas</span><span class="chev">▶</span></summary>
+            <div class="config-acc-body">
+              <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.8rem;">Si ves registros con <code>?</code> o errores al cargar, usa estas herramientas para limpiar datos huérfanos o reiniciar el sistema.</p>
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button class="btn btn-warning btn-sm" onclick="cleanOrphanedRecords()">🧹 Limpiar Registros Huérfanos</button>
+                <button class="btn btn-danger btn-sm" onclick="fullResetData()">⚠️ Reset Completo (Borra Todo)</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="footer-credits">Sistema Auto-Backup | Creado por Roberto Muñoz I | Supervisor HVAC | Build: 2026-08-11-p</div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- MODALES (COMPLETOS, SIN MODIFICACIONES) -->
+<div id="entryModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>📥 Registrar Entrada</h3><button class="close-modal" onclick="closeModal('entryModal')">&times;</button></div>
+    <form onsubmit="saveEntry(event)">
+      <div class="form-group smart-search">
+        <label>Buscar Material (Escribe código o nombre)</label>
+        <input type="text" id="entrySearch" placeholder="Ej: HVAC-01 o Cable..." oninput="filterMaterials('entry', this.value)" autocomplete="off">
+        <ul class="smart-dropdown" id="entryDropdown"></ul>
+        <div class="selected-display" id="entrySelected">Ninguno seleccionado</div>
+        <input type="hidden" id="entryMaterialId" required>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Cantidad (Entero)</label><input type="number" id="entryQty" min="1" step="1" required></div>
+        <div class="form-group"><label>N° Guía / Factura</label><input type="text" id="entryGuide" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Fecha</label><input type="date" id="entryDate" required></div>
+        <div class="form-group"><label>Nombre de quien recibe</label><input type="text" id="entryReceiverName" list="receiverNameList" placeholder="Ej: Roberto Muñoz" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Cargo</label><select id="entryReceiver" required><option value="">Seleccionar...</option></select></div>
+        <div class="form-group">
+          <label>📎 Guía de respaldo (opcional)</label>
+          <select id="entryArchivoSelect"><option value="">Sin guía adjunta</option></select>
+          <label class="btn btn-outline btn-sm" style="cursor:pointer; margin-top:0.3rem; display:inline-flex; font-size:0.78rem;">📤 Subir guía
+            <input type="file" accept="image/*,.pdf" style="display:none;" onchange="handleArchivoUpload(this,'entryArchivoSelect')">
+          </label>
+        </div>
+      </div>
+      <div class="form-group"><label>Observaciones (opcional)</label><textarea id="entryObservaciones" rows="1" placeholder="Ej: Llegó completo / Pendiente 40 unidades por reclamar"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-block">Guardar Entrada</button>
+    </form>
+  </div>
+</div>
+
+<div id="exitModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>📤 Registrar Salida</h3><button class="close-modal" onclick="closeModal('exitModal')">&times;</button></div>
+    <form onsubmit="saveExit(event)">
+      <div class="form-group smart-search">
+        <label>Buscar Material (Escribe código o nombre)</label>
+        <input type="text" id="exitSearch" placeholder="Ej: DUCT-02 o Ducto..." oninput="filterMaterials('exit', this.value)" autocomplete="off">
+        <ul class="smart-dropdown" id="exitDropdown"></ul>
+        <div class="selected-display" id="exitSelected">Ninguno seleccionado</div>
+        <input type="hidden" id="exitMaterialId" required>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Cantidad (Entero)</label><input type="number" id="exitQty" min="1" step="1" required></div>
+        <div class="form-group"><label>N° Orden de Trabajo</label><input type="text" id="exitOT" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Fecha</label><input type="date" id="exitDate" required></div>
+        <div class="form-group"><label>Especialidad</label><select id="exitSpecialty" required><option value="">Seleccionar...</option></select></div>
+      </div>
+      <div class="form-group"><label>Solicitante / Maestro</label><input type="text" id="exitRequester" required></div>
+      <div class="form-group"><label>Observaciones (opcional)</label><textarea id="exitObservaciones" rows="1" placeholder="Ej: Material con defecto, se repuso con OT 456"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-block">Guardar Salida</button>
+    </form>
+  </div>
+</div>
+
+<div id="editEntryModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>✏️ Corregir Entrada</h3><button class="close-modal" onclick="closeModal('editEntryModal')">&times;</button></div>
+    <form onsubmit="saveEditEntry(event)">
+      <input type="hidden" id="editEntryId">
+      <div class="form-row">
+        <div class="form-group"><label>Código</label><input type="text" id="editEntryCode" readonly style="background:var(--bg)"></div>
+        <div class="form-group"><label>Material</label><input type="text" id="editEntryMat" readonly style="background:var(--bg)"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Nueva Cantidad</label><input type="number" id="editEntryQty" min="1" step="1" required></div>
+        <div class="form-group"><label>N° Guía / Factura</label><input type="text" id="editEntryGuide" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Nombre de quien recibe</label><input type="text" id="editEntryReceiverName" list="receiverNameList" placeholder="Ej: Roberto Muñoz"></div>
+        <div class="form-group"><label>Cargo</label><select id="editEntryReceiver"><option value="">Seleccionar...</option></select></div>
+      </div>
+      <div class="form-group"><label>Observaciones (opcional)</label><textarea id="editEntryObservaciones" rows="1"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-block">Actualizar y Recalcular</button>
+    </form>
+  </div>
+</div>
+
+<div id="editExitModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>✏️ Corregir Salida</h3><button class="close-modal" onclick="closeModal('editExitModal')">&times;</button></div>
+    <form onsubmit="saveEditExit(event)">
+      <input type="hidden" id="editExitId">
+      <div class="form-row">
+        <div class="form-group"><label>Código</label><input type="text" id="editExitCode" readonly style="background:var(--bg)"></div>
+        <div class="form-group"><label>Material</label><input type="text" id="editExitMat" readonly style="background:var(--bg)"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Nueva Cantidad</label><input type="number" id="editExitQty" min="1" step="1" required></div>
+        <div class="form-group"><label>N° Orden de Trabajo</label><input type="text" id="editExitOT" required></div>
+      </div>
+      <div class="form-group"><label>Especialidad</label><select id="editExitSpecialty" required></select></div>
+      <div class="form-group"><label>Observaciones (opcional)</label><textarea id="editExitObservaciones" rows="1"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-block">Actualizar y Recalcular</button>
+    </form>
+  </div>
+</div>
+
+<div id="editMaterialModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>✏️ Editar Material</h3><button class="close-modal" onclick="closeModal('editMaterialModal')">&times;</button></div>
+    <form onsubmit="saveEditMaterial(event)">
+      <input type="hidden" id="editMaterialId">
+      <div class="form-row">
+        <div class="form-group"><label>Código (SKU)</label><input type="text" id="editMaterialCode" required></div>
+        <div class="form-group"><label>Nombre</label><input type="text" id="editMaterialName" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Categoría</label><select id="editMaterialCategory" required></select></div>
+        <div class="form-group"><label>Unidad</label><select id="editMaterialUnit" required></select></div>
+      </div>
+      <div class="form-group"><label>Stock Mínimo de Alerta</label><input type="number" id="editMaterialMin" required min="0"></div>
+      <p class="calc-note" style="margin-top:0.5rem;">⚠️ El stock actual no se puede editar porque se calcula automáticamente con los movimientos.</p>
+      <button type="submit" class="btn btn-primary btn-block">Guardar Cambios</button>
+    </form>
+  </div>
+</div>
+
+<div id="newObraModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>➕ Nueva Obra</h3><button class="close-modal" onclick="closeModal('newObraModal')">&times;</button></div>
+    <form onsubmit="saveNuevaObra(event)">
+      <div class="form-group"><label>Nombre de la Obra</label><input type="text" id="newObraNombre" placeholder="Ej: Edificio Las Torres" required></div>
+      <div class="form-group"><label>Tag / Descripción (opcional)</label><input type="text" id="newObraTag" placeholder="Ej: Cliente XYZ - Etapa 1"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Código de Bodega/CC (opcional)</label><input type="text" id="newObraCodBodega" placeholder="Ej: 2-12-022"></div>
+        <div class="form-group"><label>Fecha de Corte (opcional)</label><input type="date" id="newObraFechaCorte"></div>
+      </div>
+      <p class="calc-note">📌 El catálogo de materiales (códigos, nombres, categorías) es compartido con las demás obras. Solo el stock y los movimientos de esta obra nueva comenzarán en cero. El Código de Bodega/CC es el que usa tu empresa en el Excel (columnas CodiCC/CodBode) — se usa para filtrar qué datos del Excel pertenecen a esta obra. Si pones una Fecha de Corte, Seguimiento Excel ignora todo lo anterior a esa fecha (útil al empezar una etapa nueva sobre el mismo Código de Bodega/CC de una obra anterior).</p>
+      <button type="submit" class="btn btn-primary btn-block">Crear Obra</button>
+    </form>
+  </div>
+</div>
+
+<div id="renameObraModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3>✏️ Renombrar Obra</h3><button class="close-modal" onclick="closeModal('renameObraModal')">&times;</button></div>
+    <form onsubmit="saveRenombrarObra(event)">
+      <div class="form-group"><label>Nombre de la Obra</label><input type="text" id="renameObraNombre" required></div>
+      <div class="form-group"><label>Tag / Descripción</label><input type="text" id="renameObraTag"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Código de Bodega/CC (opcional)</label><input type="text" id="renameObraCodBodega" placeholder="Ej: 2-12-022"></div>
+        <div class="form-group"><label>Fecha de Corte (opcional)</label><input type="date" id="renameObraFechaCorte"></div>
+      </div>
+      <p class="calc-note">📌 Si pones una Fecha de Corte, Seguimiento Excel ignora todo lo anterior a esa fecha.</p>
+      <button type="submit" class="btn btn-primary btn-block">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<div id="excelReviewModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header"><h3 id="excelReviewTitulo">📊 Revisión del Excel</h3><button class="close-modal" onclick="closeModal('excelReviewModal')">&times;</button></div>
+    <div id="excelReviewBody"></div>
+    <div style="display:flex; gap:0.5rem; margin-top:1.2rem;">
+      <button class="btn btn-primary btn-block" onclick="closeModal('excelReviewModal')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="viewArchivoModal" class="modal">
+  <div class="modal-content" style="max-width:820px;">
+    <div class="modal-header"><h3 id="viewArchivoTitle">Guía</h3><button class="close-modal" onclick="closeModal('viewArchivoModal')">&times;</button></div>
+    <div id="viewArchivoBody" style="text-align:center;"></div>
+  </div>
+</div>
+
+<div id="toast" style="display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);min-width:260px;max-width:460px;padding:14px 24px;border-radius:10px;font-size:15px;font-weight:700;color:#fff;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,0.4);z-index:2147483647;"></div>
+<datalist id="receiverNameList"></datalist>
+
+<script>
+// ======================== CONFIGURACIÓN ========================
+const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024; // 5 MB: límite estándar real de localStorage en Edge/Chrome
+const DB = {
+  users: [{user:'admin',pass:'admin',name:'Administrador',role:'admin'},{user:'supervisor',pass:'supervisor',name:'Supervisor Obra',role:'supervisor'},{user:'bodega',pass:'bodega',name:'Bodeguero',role:'bodega'}],
+  obras: [], obraActivaId: null, stockPorObra: {},
+  materials: [], entries: [], exits: [],
+  receivers: ['Supervisor de Terreno','Bodeguero','Otros'],
+  specialties: ['Ductero','Eléctrico','Cañonero','Aislador','Mantención','Puesta en Marcha','Otros'],
+  units: ['mt','m','m2','m3','un','par','kg','gr','lt','ml','gal','pza','caja','rollo','bolsa','saco','set','kit','docena'],
+  categories: ['Ferretería','Pernos','Perfiles de Fe','Eléctrico','Gases','Oficina','EPP','Aislación','Herramientas','Seguridad'],
+  config: { theme:'light', projectName:'Inventario de Faena', projectTag:'Sistema de Control Interno', logo:null, version:'Profesional', lastBackupDate:null },
+  excelFileInfo: { lastFileModified:null, lastCheckDate:null },
+  excelImportPorObra: {}
+};
+let currentUser = null, folderHandle = null, searchTimeout, autoSaveInterval, folderAutoSaveInterval;
+let excelFileHandle = null;
+const PAG = { perPage:25, catalog:{page:1,filter:''}, inventory:{page:1,filter:''}, entries:{page:1,filter:''}, exits:{page:1,filter:''} };
+
+// ======================== MULTI-OBRA: helpers de stock aislado ========================
+// El catálogo (DB.materials) es ÚNICO y compartido entre obras.
+// El STOCK de cada material es independiente por obra: DB.stockPorObra[obraId][materialId] = cantidad
+function ensureObraStockBucket(obraId) { if(!DB.stockPorObra[obraId]) DB.stockPorObra[obraId] = {}; return DB.stockPorObra[obraId]; }
+function getStock(materialId) { if(!DB.obraActivaId) return 0; let bucket = DB.stockPorObra[DB.obraActivaId]; if(!bucket) return 0; return bucket[materialId] || 0; }
+function setStock(materialId, value) { if(!DB.obraActivaId) return; let bucket = ensureObraStockBucket(DB.obraActivaId); bucket[materialId] = value; }
+function addStock(materialId, delta) { if(!DB.obraActivaId) return; let bucket = ensureObraStockBucket(DB.obraActivaId); bucket[materialId] = (bucket[materialId] || 0) + delta; }
+function getObraActiva() { return DB.obras.find(o => o.id === DB.obraActivaId) || null; }
+function migrateToMultiObra() {
+  // Si ya existen obras, no migrar de nuevo
+  if (DB.obras && DB.obras.length > 0) return;
+  let obraId = 'obra_' + Date.now();
+  DB.obras = [{ id: obraId, nombre: DB.config.projectName || 'Obra 1', tag: DB.config.projectTag || '', logo: DB.config.logo || null }];
+  DB.obraActivaId = obraId;
+  let bucket = ensureObraStockBucket(obraId);
+  // Migrar el stock que vivía dentro de cada material hacia el bucket de la obra
+  DB.materials.forEach(m => {
+    bucket[m.id] = (typeof m.stock === 'number') ? m.stock : 0;
+    delete m.stock; // el stock ya no vive en el material, es compartido el resto de sus propiedades
+  });
+  // Marcar todos los movimientos existentes como pertenecientes a esta obra (no se pierden)
+  DB.entries.forEach(e => { if(!e.obraId) e.obraId = obraId; });
+  DB.exits.forEach(e => { if(!e.obraId) e.obraId = obraId; });
+}
+// Migración idempotente (segura de correr siempre): agrega Cargos nuevos y estructuras de integración Excel sin tocar datos existentes
+function migrateExcelIntegration() {
+  if(!DB.receivers.includes('Capataz')) DB.receivers.push('Capataz');
+  if(!DB.receivers.includes('Bodega Central')) DB.receivers.push('Bodega Central');
+  if(!DB.excelFileInfo) DB.excelFileInfo = { lastFileModified:null, lastCheckDate:null };
+  if(!DB.excelImportPorObra) DB.excelImportPorObra = {};
+  DB.obras.forEach(o => { if(o.codBodega === undefined) o.codBodega = ''; if(o.fechaCorte === undefined) o.fechaCorte = ''; });
+  DB.entries.forEach(e => { if(e.receiverName === undefined) e.receiverName = ''; if(e.observaciones === undefined) e.observaciones = ''; });
+  DB.exits.forEach(e => { if(e.observaciones === undefined) e.observaciones = ''; });
+  // Bodega Central pasó a ser 100% referencia — ya no se auto-importa nada, así que estos campos
+  // (seguimiento de qué se había importado, y las confirmaciones manuales que descontaban el pendiente)
+  // ya no se usan. Se limpian de lo que ya estuviera guardado para no dejar peso sin sentido.
+  Object.keys(DB.excelImportPorObra).forEach(obraId => {
+    let bucket = DB.excelImportPorObra[obraId];
+    delete bucket.entradasImportadas;
+    delete bucket.salidasImportadas;
+    delete bucket.confirmacionesManuales;
+    delete bucket.entradasReferencia;
+    delete bucket.salidasReferencia;
+    if(!bucket.entradasSalidasPorCodigo) bucket.entradasSalidasPorCodigo = [];
+  });
+}
+function ensureExcelImportBucket(obraId) {
+  if(!EXCEL_SEGUIMIENTO[obraId]) EXCEL_SEGUIMIENTO[obraId] = { obraId, rcReferencia:[], ocReferencia:[], entradasSalidasPorCodigo:[], entradasDetalle:[], codigosNuevosPendientes:[] };
+  let b = EXCEL_SEGUIMIENTO[obraId];
+  if(!b.entradasSalidasPorCodigo) b.entradasSalidasPorCodigo = [];
+  if(!b.entradasDetalle) b.entradasDetalle = [];
+  delete b.entradasImportadas;
+  delete b.salidasImportadas;
+  delete b.confirmacionesManuales;
+  delete b.entradasReferencia;
+  delete b.salidasReferencia;
+  return b;
+}
+function renderObraSelectors() {
+  let options = DB.obras.map(o => `<option value="${o.id}" ${o.id===DB.obraActivaId?'selected':''}>${o.nombre}</option>`).join('');
+  let headerSel = document.getElementById('headerObraSelect');
+  let dashSel = document.getElementById('dashboardObraSelect');
+  if (headerSel) headerSel.innerHTML = options;
+  if (dashSel) dashSel.innerHTML = options;
+  let obra = getObraActiva();
+  let nombreEl = document.getElementById('dashboardObraNombre');
+  let tagEl = document.getElementById('dashboardObraTag');
+  if (nombreEl) nombreEl.innerText = obra ? obra.nombre : '—';
+  if (tagEl) tagEl.innerText = obra ? (obra.tag || '') : '';
+  let reportesNombreEl = document.getElementById('reportesObraNombre');
+  if (reportesNombreEl) reportesNombreEl.innerText = obra ? obra.nombre : 'sin obra activa';
+}
+function cambiarObraActiva(obraId) {
+  if (!obraId || obraId === DB.obraActivaId) return;
+  DB.obraActivaId = obraId;
+  persistData();
+  renderObraSelectors();
+  renderAll();
+  showToast('🏗️ Obra activa: ' + (getObraActiva()?.nombre || ''));
+}
+function abrirNuevaObra() {
+  document.getElementById('newObraNombre').value = '';
+  document.getElementById('newObraTag').value = '';
+  document.getElementById('newObraCodBodega').value = '';
+  document.getElementById('newObraFechaCorte').value = '';
+  openModal('newObraModal');
+}
+function saveNuevaObra(e) {
+  e.preventDefault();
+  let nombre = document.getElementById('newObraNombre').value.trim();
+  if (!nombre) return showToast('❌ Ingresa un nombre de obra');
+  if (DB.obras.some(o => o.nombre.toLowerCase() === nombre.toLowerCase())) return showToast('❌ Ya existe una obra con ese nombre');
+  let tag = document.getElementById('newObraTag').value.trim();
+  let codBodega = document.getElementById('newObraCodBodega').value.trim();
+  let fechaCorte = document.getElementById('newObraFechaCorte').value || '';
+  let obraId = 'obra_' + Date.now();
+  DB.obras.push({ id: obraId, nombre: nombre, tag: tag, logo: null, codBodega: codBodega, fechaCorte: fechaCorte });
+  ensureObraStockBucket(obraId);
+  DB.obraActivaId = obraId;
+  saveToStorage();
+  renderObraSelectors();
+  closeModal('newObraModal');
+  showToast('✅ Obra creada: ' + nombre);
+}
+function abrirRenombrarObra() {
+  let obra = getObraActiva();
+  if (!obra) return;
+  document.getElementById('renameObraNombre').value = obra.nombre;
+  document.getElementById('renameObraTag').value = obra.tag || '';
+  document.getElementById('renameObraCodBodega').value = obra.codBodega || '';
+  document.getElementById('renameObraFechaCorte').value = obra.fechaCorte || '';
+  openModal('renameObraModal');
+}
+function saveRenombrarObra(e) {
+  e.preventDefault();
+  let obra = getObraActiva();
+  if (!obra) return;
+  let nuevoNombre = document.getElementById('renameObraNombre').value.trim();
+  if (!nuevoNombre) return showToast('❌ Ingresa un nombre');
+  if (DB.obras.some(o => o.id !== obra.id && o.nombre.toLowerCase() === nuevoNombre.toLowerCase())) return showToast('❌ Ya existe otra obra con ese nombre');
+  obra.nombre = nuevoNombre;
+  obra.tag = document.getElementById('renameObraTag').value.trim();
+  obra.codBodega = document.getElementById('renameObraCodBodega').value.trim();
+  obra.fechaCorte = document.getElementById('renameObraFechaCorte').value || '';
+  saveToStorage();
+  renderObraSelectors();
+  closeModal('renameObraModal');
+  showToast('✅ Obra actualizada');
+}
+function abrirEliminarObra(obraId) {
+  let obra = obraId ? DB.obras.find(o => o.id === obraId) : getObraActiva();
+  if (!obra) return;
+  let numEntradas = DB.entries.filter(e => e.obraId === obra.id).length;
+  let numSalidas = DB.exits.filter(e => e.obraId === obra.id).length;
+  let mensaje = `⚠️ ¿Está seguro que desea borrar la obra "${obra.nombre}"?\n\nSe eliminarán permanentemente:\n• ${numEntradas} entrada(s)\n• ${numSalidas} salida(s)\n• El stock registrado en esta obra\n\nEl catálogo de materiales (códigos, nombres) NO se verá afectado y seguirá disponible para las demás obras.\n\nEsta acción no se puede deshacer.`;
+  if (!confirm(mensaje)) return;
+  eliminarObra(obra.id);
+}
+async function eliminarObra(obraId) {
+  // Borra SOLO lo propio de la obra: su stock, sus entradas/salidas y la obra misma.
+  // El catálogo (DB.materials) nunca se toca aquí.
+  delete DB.stockPorObra[obraId];
+  DB.entries = DB.entries.filter(e => e.obraId !== obraId);
+  DB.exits = DB.exits.filter(e => e.obraId !== obraId);
+  DB.obras = DB.obras.filter(o => o.id !== obraId);
+  ARCHIVOS_GUIA = ARCHIVOS_GUIA.filter(a => a.obraId !== obraId);
+  await persistArchivos();
+  delete EXCEL_SEGUIMIENTO[obraId];
+  await persistExcelSeguimiento();
+  if (DB.obraActivaId === obraId) {
+    DB.obraActivaId = DB.obras.length > 0 ? DB.obras[0].id : null;
+  }
+  saveToStorage();
+  renderObraSelectors();
+  showToast('🗑️ Obra eliminada (catálogo intacto)');
+}
+
+// ======================== ARCHIVOS / GUÍAS (por obra) ========================
+// Se guardan en una clave de localStorage APARTE de DB a propósito: DB se autoguarda
+// cada 1.5s mientras hay sesión activa, y no queremos reescribir fotos/PDF en cada
+// ciclo de ese intervalo (le haría perder fluidez a la app). Los archivos solo se
+// guardan cuando realmente cambian (se sube o se borra uno).
+let ARCHIVOS_GUIA = [];
+let EXCEL_SEGUIMIENTO = {}; // por obraId — igual que ARCHIVOS_GUIA, vive en memoria y se respalda en su propia IndexedDB
+// Últimas listas renderizadas de Seguimiento Excel: los botones de acción las referencian por
+// índice (no por texto) para no depender de escapar comillas/caracteres especiales del nombre
+// del producto que viene del Excel (ej: 18" de ancho rompía el botón antes de este cambio).
+let SEG_CODIGOS_NUEVOS = [];
+let SEG_SIN_ASIGNAR = [];
+
+// Misma razón que FaenaArchivosDB: esto no comparte el techo de 5MB de localStorage con el resto de tus
+// datos. RC/OC/resumen de Entradas-Salidas de todo el historial del Excel puede pesar varios MB con el
+// tiempo — en IndexedDB puede crecer hasta ~60% del disco libre de tu equipo en vez de competir por los 5MB.
+function openExcelSeguimientoDB() {
+  return new Promise((resolve, reject) => {
+    let req = indexedDB.open('FaenaExcelSeguimientoDB', 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('buckets')) req.result.createObjectStore('buckets', { keyPath: 'obraId' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function persistExcelSeguimiento() {
+  try {
+    let db = await openExcelSeguimientoDB();
+    await new Promise((resolve, reject) => {
+      let tx = db.transaction('buckets', 'readwrite');
+      let store = tx.objectStore('buckets');
+      store.clear();
+      Object.keys(EXCEL_SEGUIMIENTO).forEach(obraId => store.put(Object.assign({}, EXCEL_SEGUIMIENTO[obraId], { obraId })));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.log('No se pudo guardar el seguimiento del Excel en IndexedDB:', e);
+  }
+}
+async function loadExcelSeguimientoFromStorage() {
+  // Migración única desde el formato viejo (guardado dentro de DB, competía por los 5MB de localStorage).
+  if (DB.excelImportPorObra && Object.keys(DB.excelImportPorObra).length) {
+    Object.keys(DB.excelImportPorObra).forEach(obraId => {
+      EXCEL_SEGUIMIENTO[obraId] = Object.assign({ obraId }, DB.excelImportPorObra[obraId]);
+    });
+    delete DB.excelImportPorObra;
+    persistData();
+    await persistExcelSeguimiento();
+    return;
+  }
+  try {
+    let db = await openExcelSeguimientoDB();
+    let registros = await new Promise((resolve, reject) => {
+      let tx = db.transaction('buckets', 'readonly');
+      let req = tx.objectStore('buckets').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    EXCEL_SEGUIMIENTO = {};
+    registros.forEach(b => { EXCEL_SEGUIMIENTO[b.obraId] = b; });
+  } catch (e) {
+    console.log('No se pudo leer IndexedDB de seguimiento Excel:', e);
+    EXCEL_SEGUIMIENTO = {};
+  }
+}
+
+// IndexedDB dedicada para las guías (fotos/PDF). A diferencia de localStorage, esto no
+// comparte el techo de 5MB con el resto de tus datos: en Edge/Chrome puede crecer hasta
+// ~60% del disco libre de tu equipo. ARCHIVOS_GUIA sigue siendo un arreglo en memoria que
+// se lee una vez al iniciar sesión; renderArchivos/getArchivosObraActiva/etc. no cambian,
+// solo cambia DÓNDE se guarda permanentemente.
+function openArchivosDB() {
+  return new Promise((resolve, reject) => {
+    let req = indexedDB.open('FaenaArchivosDB', 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('archivos')) req.result.createObjectStore('archivos', { keyPath: 'id' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function persistArchivos() {
+  try {
+    let db = await openArchivosDB();
+    await new Promise((resolve, reject) => {
+      let tx = db.transaction('archivos', 'readwrite');
+      let store = tx.objectStore('archivos');
+      store.clear();
+      ARCHIVOS_GUIA.forEach(a => store.put(a));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.log('No se pudo guardar en IndexedDB:', e);
+    showToast('⚠️ No se pudo guardar la(s) guía(s) en el almacenamiento del navegador');
+  }
+}
+async function loadArchivosFromStorage() {
+  // Migración única desde la versión anterior (localStorage), si corresponde
+  let legacy = localStorage.getItem('faena_archivos_v1');
+  if (legacy) {
+    try { let legacyArr = JSON.parse(legacy) || []; if (legacyArr.length) ARCHIVOS_GUIA = legacyArr; } catch (e) {}
+    localStorage.removeItem('faena_archivos_v1');
+    if (ARCHIVOS_GUIA.length) { await persistArchivos(); return; }
+  }
+  try {
+    let db = await openArchivosDB();
+    let registros = await new Promise((resolve, reject) => {
+      let tx = db.transaction('archivos', 'readonly');
+      let req = tx.objectStore('archivos').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    ARCHIVOS_GUIA = registros;
+  } catch (e) {
+    console.log('No se pudo leer IndexedDB de archivos:', e);
+    ARCHIVOS_GUIA = [];
+  }
+}
+function getArchivosObraActiva() { return ARCHIVOS_GUIA.filter(a => a.obraId === DB.obraActivaId); }
+
+function compressImageFile(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    let reader = new FileReader();
+    reader.onload = e => {
+      let img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        let canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('No se pudo leer la imagen'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Comprime un PDF: re-dibuja cada página como imagen liviana (canvas) y arma un PDF nuevo
+// con jsPDF (ya cargado en la app). Requiere pdf.js (window.pdfjsLib); si no está disponible
+// o algo falla, lanza un error y quien llama debe usar el PDF original sin comprimir.
+async function compressPdfFile(file, maxDimPx, quality) {
+  if (!window.pdfjsLib) throw new Error('pdf.js no disponible');
+  let arrayBuffer = await file.arrayBuffer();
+  let pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let numPages = Math.min(pdf.numPages, 15);
+  let { jsPDF } = window.jspdf;
+  let outDoc = null;
+  const PX_TO_PT = 0.75; // asumiendo 96dpi, conversión estándar px→pt (1pt = 1/72in)
+  for (let i = 1; i <= numPages; i++) {
+    let page = await pdf.getPage(i);
+    let base = page.getViewport({ scale: 1 });
+    let scale = maxDimPx / Math.max(base.width, base.height);
+    if (scale > 1) scale = 1; // nunca agrandar una página pequeña
+    let viewport = page.getViewport({ scale: scale });
+    let canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+    let imgData = canvas.toDataURL('image/jpeg', quality);
+    let wPt = canvas.width * PX_TO_PT, hPt = canvas.height * PX_TO_PT;
+    let orientation = wPt > hPt ? 'landscape' : 'portrait';
+    if (!outDoc) outDoc = new jsPDF({ orientation: orientation, unit: 'pt', format: [wPt, hPt] });
+    else outDoc.addPage([wPt, hPt], orientation);
+    outDoc.addImage(imgData, 'JPEG', 0, 0, wPt, hPt);
+    canvas.width = 0; canvas.height = 0; // liberar memoria del canvas apenas se pueda
+  }
+  if (!outDoc) throw new Error('El PDF no tiene páginas legibles');
+  return outDoc.output('datauristring');
+}
+
+async function handleArchivoUpload(input, linkSelectId) {
+  if (!DB.obraActivaId) { showToast('❌ No hay obra activa. Selecciona una obra primero.'); input.value = ''; return; }
+  let files = Array.from(input.files || []);
+  if (!files.length) return;
+  let subidos = 0;
+  for (let file of files) {
+    let esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    try {
+      let dataUrl, tipo;
+      if (esPdf) {
+        dataUrl = null;
+        if (file.size > 50 * 1024 * 1024) { showToast('❌ PDF demasiado pesado, no se puede procesar (máx 50 MB): ' + file.name); continue; }
+        if (file.size > 5 * 1024 * 1024) {
+          try {
+            showToast('Comprimiendo PDF...');
+            let comprimido = await compressPdfFile(file, 1500, 0.68);
+            let sizeComprimido = Math.round(comprimido.length * 0.75);
+            if (sizeComprimido < file.size) dataUrl = comprimido;
+          } catch (errPdf) { console.log('No se pudo comprimir el PDF, se usará el original:', errPdf.message); }
+        }
+        if (!dataUrl) {
+          // Bajo 5MB, o si la compresión no se intentó/no ayudó: se guarda el PDF tal cual,
+          // con su texto seleccionable intacto. Ya no hay tope de rechazo por peso (hay espacio de sobra).
+          dataUrl = await new Promise((res, rej) => { let r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file); });
+        }
+        tipo = 'pdf';
+      } else {
+        dataUrl = await compressImageFile(file, 1600, 0.75);
+        if (dataUrl.length * 0.75 > 900 * 1024) dataUrl = await compressImageFile(file, 1100, 0.6);
+        tipo = 'image';
+      }
+      let nuevo = { id: 'arc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), obraId: DB.obraActivaId, nombre: file.name, tipo: tipo, data: dataUrl, size: Math.round(dataUrl.length * 0.75), fecha: new Date().toISOString() };
+      ARCHIVOS_GUIA.push(nuevo);
+      subidos++;
+      if (linkSelectId) { populateArchivoSelect(linkSelectId); let sel = document.getElementById(linkSelectId); if (sel) sel.value = nuevo.id; }
+    } catch (e) { showToast('❌ No se pudo procesar ' + file.name); }
+  }
+  if (subidos > 0) { await persistArchivos(); updateStorageBar(); renderArchivos(); showToast(subidos === 1 ? '✅ Guía subida' : `✅ ${subidos} guías subidas`); }
+  input.value = '';
+}
+
+function renderArchivos() {
+  let grid = document.getElementById('archivosGrid');
+  if (!grid) return;
+  let nombreEl = document.getElementById('archivosObraNombre');
+  if (nombreEl) { let obra = getObraActiva(); nombreEl.innerText = obra ? obra.nombre : '—'; }
+  let lista = getArchivosObraActiva().sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  grid.innerHTML = lista.map(a => `<div class="archivo-card">
+      <div class="archivo-thumb" onclick="verArchivo('${a.id}')">${a.tipo === 'image' ? `<img src="${a.data}" alt="${a.nombre}">` : '📄'}</div>
+      <div class="archivo-info"><div class="archivo-name" title="${a.nombre}">${a.nombre}</div><div class="archivo-meta">${new Date(a.fecha).toLocaleDateString()} · ${formatBytes(a.size)}</div></div>
+      <div class="archivo-actions"><button class="btn btn-outline btn-sm" onclick="verArchivo('${a.id}')">👁️ Ver</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarArchivo('${a.id}')">🗑️</button></div>
+    </div>`).join('') || '<div class="archivo-empty">Sin guías subidas para esta obra todavía.</div>';
+}
+
+function verArchivo(id) {
+  let a = ARCHIVOS_GUIA.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('viewArchivoTitle').innerText = a.nombre;
+  document.getElementById('viewArchivoBody').innerHTML = a.tipo === 'image' ? `<img src="${a.data}" style="max-width:100%; border-radius:8px;">` : `<iframe src="${a.data}" style="width:100%; height:70vh; border:none;"></iframe>`;
+  openModal('viewArchivoModal');
+}
+
+async function eliminarArchivo(id) {
+  if (!confirm('¿Eliminar esta guía?')) return;
+  ARCHIVOS_GUIA = ARCHIVOS_GUIA.filter(a => a.id !== id);
+  await persistArchivos();
+  updateStorageBar();
+  renderArchivos();
+  showToast('🗑️ Guía eliminada');
+}
+
+function populateArchivoSelect(selectId) {
+  let el = document.getElementById(selectId);
+  if (!el) return;
+  let valorActual = el.value;
+  el.innerHTML = '<option value="">Sin guía adjunta</option>' + getArchivosObraActiva().map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+  if (valorActual && el.querySelector(`option[value="${valorActual}"]`)) el.value = valorActual;
+}
+
+function persistData() { localStorage.setItem('faena_inventory_v2',JSON.stringify(DB)); localStorage.setItem('faena_theme',DB.config.theme); }
+function saveToStorage() { persistData(); renderAll(); updateStorageBar(); }
+
+// Barra de almacenamiento: mide el uso REAL de localStorage (bytes exactos del JSON guardado)
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+function getLocalStorageUsageBytes() {
+  // UTF-16: cada carácter ocupa 2 bytes en localStorage
+  let total = 0;
+  let inv = localStorage.getItem('faena_inventory_v2');
+  let theme = localStorage.getItem('faena_theme');
+  if (inv) total += inv.length * 2;
+  if (theme) total += theme.length * 2;
+  return total;
+}
+function updateStorageBar() {
+  let usedBytes = getLocalStorageUsageBytes();
+  let percent = Math.min(100, (usedBytes / STORAGE_LIMIT_BYTES) * 100);
+  let freeBytes = Math.max(0, STORAGE_LIMIT_BYTES - usedBytes);
+  let color = percent>=80?'#ef4444':(percent>=60?'#f59e0b':'#10b981');
+  ['', 'Archivos'].forEach(suf => {
+    let fill = document.getElementById('storageFill'+suf), span = document.getElementById('storageCount'+suf);
+    let usedDetail = document.getElementById('storageUsedDetail'+suf), freeDetail = document.getElementById('storageFreeDetail'+suf);
+    if(fill){ fill.style.width=percent+'%'; fill.style.backgroundColor = color; }
+    if(span) span.innerText = `${formatBytes(usedBytes)} / 5 MB`;
+    if(usedDetail) usedDetail.innerText = `Usado: ${formatBytes(usedBytes)} (${percent.toFixed(1)}%)`;
+    if(freeDetail) freeDetail.innerText = `Disponible: ~${formatBytes(freeBytes)}`;
+  });
+  updateIndexedDbBar();
+}
+
+// Consulta la cuota REAL del navegador (no solo localStorage): esto incluye IndexedDB,
+// que en Edge/Chrome puede usar hasta ~60% del disco libre — muchísimo más que los 5MB
+// de localStorage. Se muestra como una segunda barra, igual a la de localStorage, para
+// que se lean en paralelo y quede claro que son dos límites distintos.
+async function updateIndexedDbBar() {
+  let fills = document.querySelectorAll('[id^="idbFill"]');
+  if (!fills.length) return;
+  if (!navigator.storage || !navigator.storage.estimate) {
+    ['', 'Archivos'].forEach(suf => {
+      let count = document.getElementById('idbCount'+suf);
+      if (count) count.innerText = 'No disponible en este navegador';
+    });
+    return;
+  }
+  try {
+    let est = await navigator.storage.estimate();
+    let usedBytes = est.usage || 0, quotaBytes = est.quota || 1;
+    let percent = Math.min(100, (usedBytes / quotaBytes) * 100);
+    let color = percent>=80?'#ef4444':(percent>=60?'#f59e0b':'#10b981');
+    let freeBytes = Math.max(0, quotaBytes - usedBytes);
+    let quotaTxt = formatBytes(quotaBytes), usedTxt = formatBytes(usedBytes), freeTxt = formatBytes(freeBytes);
+    ['', 'Archivos'].forEach(suf => {
+      let fill = document.getElementById('idbFill'+suf), count = document.getElementById('idbCount'+suf);
+      let usedDetail = document.getElementById('idbUsedDetail'+suf), freeDetail = document.getElementById('idbFreeDetail'+suf);
+      if (fill) { fill.style.width = percent+'%'; fill.style.backgroundColor = color; }
+      if (count) count.innerText = `${usedTxt} / ~${quotaTxt}`;
+      if (usedDetail) usedDetail.innerText = `Usado: ${usedTxt} (${percent.toFixed(2)}%)`;
+      if (freeDetail) freeDetail.innerText = `Disponible: ~${freeTxt}`;
+    });
+  } catch (e) {
+    ['', 'Archivos'].forEach(suf => { let count = document.getElementById('idbCount'+suf); if (count) count.innerText = 'No se pudo calcular'; });
+  }
+}
+
+// ======================== BACKUP CON ARCHIVO ÚNICO (sin mensajes falsos) ========================
+function storeFolderHandle(handle) { return new Promise((resolve,reject)=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); }; req.onsuccess=()=>{ let tx=req.result.transaction('handles','readwrite'); tx.objectStore('handles').put(handle,'folderHandle'); tx.oncomplete=()=>{ req.result.close(); resolve(); }; tx.onerror=e=>reject(e); }; req.onerror=e=>reject(e); }); }
+function getStoredFolderHandle() { return new Promise(resolve=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onsuccess=()=>{ let db=req.result; if(!db.objectStoreNames.contains('handles')){ db.close(); resolve(null); return; } let tx=db.transaction('handles','readonly'); let get=tx.objectStore('handles').get('folderHandle'); get.onsuccess=()=>{ db.close(); resolve(get.result||null); }; get.onerror=()=>{ db.close(); resolve(null); }; }; req.onerror=()=>resolve(null); }); }
+async function selectFolder(){ if(!window.showDirectoryPicker){ showToast("API no soportada"); return null; } try{ let handle=await window.showDirectoryPicker(); let perm=await handle.requestPermission({mode:'readwrite'}); if(perm==='granted'){ await storeFolderHandle(handle); return handle; } else showToast("Permiso denegado"); }catch(e){ showToast("No se seleccionó carpeta"); } return null; }
+async function loadFolderHandle(){ let h=await getStoredFolderHandle(); if(h) try{ if((await h.requestPermission({mode:'readwrite'}))==='granted') return h; }catch(e){} return null; }
+async function getLatestBackupFile(handle){ try{ return await handle.getFileHandle('Backup_Faena_Latest.json',{create:false}); }catch(e){ return null; } }
+async function loadFromFile(fileHandle){ 
+  try{ 
+    let file=await fileHandle.getFile(), text=await file.text(), data=JSON.parse(text); 
+    if(data.users || data.materials){ 
+      Object.assign(DB,data); 
+      if(!DB.obras) DB.obras=[]; if(!DB.stockPorObra) DB.stockPorObra={};
+      if(DB.archivosGuia){ ARCHIVOS_GUIA=DB.archivosGuia; delete DB.archivosGuia; await persistArchivos(); }
+      migrateToMultiObra();
+      migrateExcelIntegration();
+      await loadExcelSeguimientoFromStorage(); // si el backup cargado trae el formato viejo, lo saca de DB y lo manda a IndexedDB
+      persistData();
+      renderAll();
+      updateBackupCircle();
+      return true;
+    }
+  } catch(e){
+    console.log("Carga automática de backup no disponible:", e.message);
+  }
+  return false;
+}
+async function saveCurrentToFolder(handle,silent=false){ if(!handle) return false; try{ let fileHandle=await handle.getFileHandle('Backup_Faena_Latest.json',{create:true}); let writable=await fileHandle.createWritable(); let exportData=Object.assign({},DB,{archivosGuia:ARCHIVOS_GUIA}); await writable.write(JSON.stringify(exportData,null,2)); await writable.close(); DB.config.lastBackupDate=new Date().toISOString(); persistData(); updateBackupCircle(); if(!silent) showToast("💾 Backup guardado (archivo único)"); return true; }catch(e){ if(!silent) showToast("Error al guardar"); return false; } }
+async function initFolderSync(){
+  if(!window.showDirectoryPicker){ showToast("⚠️ API no soportada"); return false; }
+  let handle=await loadFolderHandle();
+  if(!handle){ if(confirm("¿Seleccionar carpeta para backups?")) handle=await selectFolder(); else return false; }
+  folderHandle=handle;
+  let latest=await getLatestBackupFile(folderHandle);
+  if(latest){
+    // No cargar a ciegas: si el archivo de la carpeta es más viejo que la última vez que
+    // nosotros mismos lo escribimos, significa que nadie más lo actualizó desde entonces —
+    // cargarlo igual borraría cambios locales más recientes (ej: material recién catalogado
+    // que aún no se había vuelto a guardar en la carpeta). Se usa un margen de 5s para
+    // absorber pequeñas diferencias de reloj entre el mtime del archivo y el timestamp guardado.
+    let file = await latest.getFile();
+    let hayRegistroLocal = !!DB.config.lastBackupDate;
+    let archivoEsMasNuevo = !hayRegistroLocal || file.lastModified > (new Date(DB.config.lastBackupDate).getTime() + 5000);
+    if(archivoEsMasNuevo){
+      await loadFromFile(latest);
+    } else {
+      console.log("El archivo de la carpeta no está más actualizado que los datos locales; se conservan los datos locales y se re-sincroniza el archivo.");
+      await saveCurrentToFolder(folderHandle, true);
+    }
+  } else console.log("No se encontró backup previo");
+  return true;
+}
+async function manualSaveToFolder(){ if(!folderHandle){ let h=await selectFolder(); if(h){ folderHandle=h; await saveCurrentToFolder(folderHandle,false); } } else await saveCurrentToFolder(folderHandle,false); }
+async function reSelectFolder(){ let h=await selectFolder(); if(h) folderHandle=h; }
+
+// ======================== INTEGRACIÓN CON EXCEL (Query RC / OC / ENTRADAS / SALIDAS) ========================
+// Reutiliza la misma IndexedDB 'FaenaFolderDB' que la carpeta de backup, con una clave distinta ('excelFileHandle')
+function storeExcelFileHandle(handle) { return new Promise((resolve,reject)=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); }; req.onsuccess=()=>{ let tx=req.result.transaction('handles','readwrite'); tx.objectStore('handles').put(handle,'excelFileHandle'); tx.oncomplete=()=>{ req.result.close(); resolve(); }; tx.onerror=e=>reject(e); }; req.onerror=e=>reject(e); }); }
+function getStoredExcelFileHandle() { return new Promise(resolve=>{ let req=indexedDB.open('FaenaFolderDB',1); req.onsuccess=()=>{ let db=req.result; if(!db.objectStoreNames.contains('handles')){ db.close(); resolve(null); return; } let tx=db.transaction('handles','readonly'); let get=tx.objectStore('handles').get('excelFileHandle'); get.onsuccess=()=>{ db.close(); resolve(get.result||null); }; get.onerror=()=>{ db.close(); resolve(null); }; }; req.onerror=()=>resolve(null); }); }
+async function selectExcelFile(){
+  if(!window.showOpenFilePicker){ showToast('⚠️ Tu navegador no soporta esta función (usa Edge o Chrome)'); return null; }
+  try{
+    let [handle] = await window.showOpenFilePicker({ types:[{ description:'Excel', accept:{ 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'] } }], excludeAcceptAllOption:false, multiple:false });
+    let perm = await handle.requestPermission({mode:'read'});
+    if(perm==='granted'){ await storeExcelFileHandle(handle); excelFileHandle=handle; return handle; }
+    showToast('Permiso denegado');
+  }catch(e){ /* usuario canceló la selección */ }
+  return null;
+}
+async function loadExcelFileHandleFromStorage(){ let h=await getStoredExcelFileHandle(); if(h) try{ if((await h.requestPermission({mode:'read'}))==='granted') return h; }catch(e){} return null; }
+async function seleccionarYRevisarExcel(){ let h=await selectExcelFile(); if(h){ showToast('✅ Archivo Excel seleccionado'); await revisarExcelActualizado(true); } }
+
+async function leerExcelWorkbook(handle){
+  let file = await handle.getFile();
+  let buf = await file.arrayBuffer();
+  let wb = XLSX.read(buf, {type:'array', cellDates:true});
+  return { wb, fileLastModified:file.lastModified, fileName:file.name };
+}
+function hojaAJson(wb, nombreHoja){ let sheet=wb.Sheets[nombreHoja]; if(!sheet) return []; return XLSX.utils.sheet_to_json(sheet, {defval:null}); }
+// Normaliza un código de producto (quita espacios y pasa a mayúsculas) para comparar de forma
+// consistente contra el catálogo, igual que ya hace agregarMaterial() al guardar un material nuevo.
+function normalizarCodigo(c){ return String(c==null?'':c).trim().toUpperCase(); }
+// Suma cuánto de este código ya registraste TÚ como Entrada real en esta obra (independiente de lo
+// que diga el Excel de Bodega Central). Se usa para que "Pendiente" refleje tu propio registro,
+// no las Salidas que Bodega Central marque en su sistema.
+function totalRegistradoLocalPorCodigo(obraId, code){
+  let codeNorm = normalizarCodigo(code);
+  let mat = DB.materials.find(m=>normalizarCodigo(m.code)===codeNorm);
+  if(!mat) return 0;
+  return DB.entries.filter(e=>e.obraId===obraId && e.materialId===mat.id).reduce((s,e)=>s+e.quantity,0);
+}
+// Cuánto queda pendiente de registrar en tu obra para este código, según Bodega Central menos lo que ya registraste tú.
+function pendienteBodegaCentralPorCodigo(obraId, code){
+  let bucket = EXCEL_SEGUIMIENTO[obraId];
+  if(!bucket || !bucket.entradasSalidasPorCodigo) return 0;
+  let codeNorm = normalizarCodigo(code);
+  let item = bucket.entradasSalidasPorCodigo.find(c=>normalizarCodigo(c.code)===codeNorm);
+  if(!item) return 0;
+  return Math.max(0, item.totalEnt - totalRegistradoLocalPorCodigo(obraId, code));
+}
+// FechaOC llega como texto "DD/MM/YYYY" (no es una fecha real en el Excel origen). Se parsea para poder ordenar.
+function parseFechaDDMMYYYY(s){ if(!s) return new Date(0); let p=String(s).trim().split('/'); if(p.length!==3) return new Date(0); let d=+p[0], m=+p[1], y=+p[2]; if(!d||!m||!y) return new Date(0); return new Date(y, m-1, d); }
+
+// Orquestador principal: lee el Excel, filtra por el Código de Bodega/CC de la obra activa (y por
+// Fecha de Corte si la obra la tiene configurada), y arma la información de referencia de Seguimiento.
+// Ya no crea Entradas/Salidas reales — Bodega Central es 100% información, el stock lo cierras tú.
+async function revisarExcelActualizado(manual){
+  let obra = getObraActiva();
+  if(!obra){ if(manual) showToast('❌ No hay obra activa'); return; }
+  if(!obra.codBodega){ if(manual) showToast('⚠️ Configura el Código de Bodega/CC de esta obra (Dashboard → ✏️ Renombrar) antes de revisar el Excel'); return; }
+  let handle = excelFileHandle || await loadExcelFileHandleFromStorage();
+  if(!handle){ if(manual) showToast('⚠️ Aún no has seleccionado el archivo Excel. Ve a Configuración.'); return; }
+  excelFileHandle = handle;
+  let resultado;
+  try{ resultado = await leerExcelWorkbook(handle); } catch(e){ if(manual) showToast('❌ No se pudo leer el archivo Excel'); return; }
+  let { wb, fileLastModified } = resultado;
+
+  let diasSinActualizar = Math.floor((Date.now() - fileLastModified) / (1000*60*60*24));
+  DB.excelFileInfo.lastFileModified = fileLastModified;
+  DB.excelFileInfo.lastCheckDate = new Date().toISOString();
+
+  let bucket = ensureExcelImportBucket(obra.id);
+
+  let rcRows = hojaAJson(wb,'RC').filter(r=>r.CodiCC===obra.codBodega);
+  let ocRows = hojaAJson(wb,'OC').filter(r=>r.CodiCC===obra.codBodega);
+  let entRows = hojaAJson(wb,'ENTRADAS').filter(r=>r.CodBode===obra.codBodega);
+  let salRows = hojaAJson(wb,'SALIDAS').filter(r=>r.CodBode===obra.codBodega);
+
+  // Si la obra tiene Fecha de Corte (ej. el inicio de una etapa nueva sobre el mismo Código de
+  // Bodega/CC de una obra anterior), se ignora todo lo anterior a esa fecha en Seguimiento Excel.
+  if(obra.fechaCorte){
+    let corte = new Date(obra.fechaCorte);
+    rcRows = rcRows.filter(r=>r.FEmision && new Date(r.FEmision) >= corte);
+    ocRows = ocRows.filter(r=>{ let f=parseFechaDDMMYYYY(r.FechaOC); return f && f >= corte; });
+    entRows = entRows.filter(r=>r.Fecha && new Date(r.Fecha) >= corte);
+    salRows = salRows.filter(r=>r.Fecha && new Date(r.Fecha) >= corte);
+  }
+
+  // Se guardan solo los campos que realmente se usan en pantalla (RC/OC tienen columnas de precio,
+  // usuario, etc. que nunca se muestran) — reduce bastante el espacio ocupado.
+  bucket.rcReferencia = rcRows.map(r=>({NumReq:r.NumReq, CodProd:r.CodProd, DesProd:r.DesProd, Cantidad:r.Cantidad, CodUMed:r.CodUMed, Solicita:r.Solicita, DescEtapa:r.DescEtapa, DescEstado:r.DescEstado, FEmision:r.FEmision}));
+  bucket.ocReferencia = ocRows.map(r=>({Numoc:r.Numoc, CodProd:r.CodProd, DesProd:r.DesProd, NomAux:r.NomAux, Saldo:r.Saldo, CodUMed:r.CodUMed, DesEtapaOC:r.DesEtapaOC, FechaOC:r.FechaOC}));
+  // Entradas/Salidas de Bodega Central: se agregan por código acá mismo, una sola vez por revisión,
+  // y solo se guarda ese resumen — es puramente informativo, nunca toca tu stock ni tus Entradas/Salidas.
+  let porCodigoMap = new Map();
+  entRows.forEach(r=>{ let c=r.CodProd; if(!c) return; let cur=porCodigoMap.get(c)||{code:c,name:r.DetProd||r.DesProd||'',unit:r.CodUMed||'',totalEnt:0,totalSal:0,ultimaFecha:null}; cur.totalEnt+=Number(r.CantIngresada)||0; if(r.Fecha&&(!cur.ultimaFecha||new Date(r.Fecha)>new Date(cur.ultimaFecha))) cur.ultimaFecha=r.Fecha; porCodigoMap.set(c,cur); });
+  salRows.forEach(r=>{ let c=r.CodProd; if(!c) return; let cur=porCodigoMap.get(c)||{code:c,name:r.DetProd||r.DesProd||'',unit:r.CodUMed||'',totalEnt:0,totalSal:0,ultimaFecha:null}; cur.totalSal+=Number(r.CantDespachada)||0; porCodigoMap.set(c,cur); });
+  bucket.entradasSalidasPorCodigo = Array.from(porCodigoMap.values());
+  // Detalle línea por línea de cada entrada a Bodega Central (con su N° de OC "Orden"), para poder
+  // listar todas las OC involucradas en el Excel de pendientes aunque el material se repita.
+  bucket.entradasDetalle = entRows.filter(r=>r.CodProd).map(r=>({ code:r.CodProd, name:r.DetProd||r.DesProd||'', unit:r.CodUMed||'', fecha:r.Fecha||null, orden:r.Orden||'', cantidad:Number(r.CantIngresada)||0 }));
+
+  // Códigos de producto que aparecen en el Excel pero no están en tu catálogo — informativo,
+  // ya no bloquea ninguna importación (porque ya no hay importación automática).
+  let codigosCatalogo = new Set(DB.materials.map(m=>normalizarCodigo(m.code)));
+  let codigosNuevosMap = new Map();
+  entRows.concat(salRows).forEach(r=>{ let code=normalizarCodigo(r.CodProd); if(code && !codigosCatalogo.has(code) && !codigosNuevosMap.has(code)) codigosNuevosMap.set(code,{code:code, name:r.DetProd||r.DesProd||'', unit:r.CodUMed||''}); });
+  bucket.codigosNuevosPendientes = Array.from(codigosNuevosMap.values());
+
+  persistData();
+  await persistExcelSeguimiento();
+  updateStorageBar();
+  actualizarEstadoArchivoExcelUI();
+
+  renderSeguimiento();
+  mostrarResumenExcel(diasSinActualizar);
+}
+
+function mostrarResumenExcel(dias){
+  let body = document.getElementById('excelReviewBody');
+  if(!body) return;
+  document.getElementById('excelReviewTitulo').innerText = '📊 Revisión del Excel';
+  let colorAviso = dias>=7 ? 'var(--danger)' : 'var(--warning)';
+  let avisoFrescura = `<p class="calc-note" style="border-color:${colorAviso}; color:${colorAviso}; font-weight:600;">📌 Recuerda actualizar el Query en Excel antes de confiar en estos datos. Este archivo se guardó hace ${dias===0?'menos de 1 día (hoy)':dias+' día(s)'}.</p>`;
+  let nRc = document.getElementById('segRcCount')?.innerText || '0';
+  let nOc = document.getElementById('segOcCount')?.innerText || '0';
+  let nPendientes = document.getElementById('segSinAsignarCount')?.innerText || '0';
+  let nCod = document.getElementById('segCodigosCount')?.innerText || '0';
+  let resumen = `
+    <p style="margin:0.8rem 0 0.6rem;">Estado actual en Seguimiento Excel:</p>
+    <ul style="margin-left:1.2rem; margin-bottom:0.8rem; line-height:1.8;">
+      <li><b>${nRc}</b> requisición(es) sin Orden de Compra</li>
+      <li><b>${nOc}</b> Orden(es) de Compra con saldo pendiente de recepción</li>
+      <li><b>${nPendientes}</b> producto(s) con material en Bodega Central sin despachar</li>
+      ${Number(nCod)>0? `<li><b>${nCod}</b> código(s) de producto que no están en tu catálogo</li>`:''}
+    </ul>
+    <p class="calc-note">📌 Bodega Central es información — nada de esto toca tu stock. Lo que registres tú (a mano o con "➕ Registrar en mi Obra") es lo único que cuenta como tu inventario real.</p>
+  `;
+  body.innerHTML = avisoFrescura + resumen;
+  openModal('excelReviewModal');
+}
+
+function actualizarEstadoArchivoExcelUI(){
+  let dias = (DB.excelFileInfo && DB.excelFileInfo.lastFileModified) ? Math.floor((Date.now()-DB.excelFileInfo.lastFileModified)/(1000*60*60*24)) : null;
+  let texto;
+  if(!DB.excelFileInfo || !DB.excelFileInfo.lastCheckDate){ texto = 'Aún no se ha revisado ningún archivo Excel.'; }
+  else { texto = `Archivo Excel guardado hace ${dias!=null?dias:'?'} día(s). Última revisión: ${new Date(DB.excelFileInfo.lastCheckDate).toLocaleString('es-CL')}.`; if(dias!=null && dias>=7) texto += ' ⚠️'; }
+  let el1=document.getElementById('segFileStatus'); if(el1) el1.innerText=texto;
+  let el2=document.getElementById('excelSyncStatus'); if(el2) el2.innerText=texto;
+}
+
+function renderSeguimiento(){
+  actualizarEstadoArchivoExcelUI();
+  let obra = getObraActiva();
+  let segObraNombre = document.getElementById('segObraNombre');
+  if(segObraNombre) segObraNombre.innerText = obra? obra.nombre : '—';
+  let setTxt=(id,val)=>{ let el=document.getElementById(id); if(el) el.innerText=val; };
+  let setHtml=(id,val)=>{ let el=document.getElementById(id); if(el) el.innerHTML=val; };
+  if(!obra || !obra.codBodega){
+    let msg7='<tr><td colspan="7">Configura el Código de Bodega/CC de esta obra para ver el seguimiento.</td></tr>';
+    let msg5='<tr><td colspan="5">Configura el Código de Bodega/CC de esta obra para ver el seguimiento.</td></tr>';
+    let msg4='<tr><td colspan="4">Configura el Código de Bodega/CC de esta obra para ver el seguimiento.</td></tr>';
+    setHtml('segRcTable',msg7); setHtml('segOcTable',msg7); setHtml('segSinAsignarTable',msg5);
+    setHtml('segCodigosTable', msg4);
+    setTxt('segRcCount','0'); setTxt('segOcCount','0'); setTxt('segSinAsignarCount','0'); setTxt('segCodigosCount','0');
+    return;
+  }
+  let bucket = ensureExcelImportBucket(obra.id);
+  let rcPendientes = (bucket.rcReferencia||[]).filter(r=> r.DescEstado==='Aprobada' && r.DescEtapa!=='Completa en Orden de Compra' && r.DescEtapa!=='Con Ordenes de Compra Asociadas');
+  let ocPendientes = (bucket.ocReferencia||[]).filter(r => Number(r.Saldo)>0);
+  // Pendiente = cuánto entró a Bodega Central bajo tu código, menos cuánto YA registraste tú en tus
+  // propias Entradas para ese material. Ya no se usa la columna de Salidas del Excel de Bodega Central:
+  // la fila no debe desaparecer por lo que ellos marquen como despachado, solo cuando tú lo registras.
+  let sinDespachar = (bucket.entradasSalidasPorCodigo||[]).map(c=>({...c, pendiente: Math.max(0, c.totalEnt - totalRegistradoLocalPorCodigo(obra.id, c.code))})).filter(c=>c.pendiente > 0.0001);
+  // Se filtra en vivo contra el catálogo actual (no solo la foto fija del último escaneo del Excel),
+  // así el código desaparece de esta lista apenas se agrega el material, sin esperar a revisar el Excel de nuevo.
+  let codigosCatalogoActual = new Set(DB.materials.map(m=>normalizarCodigo(m.code)));
+  let codigosNuevos = (bucket.codigosNuevosPendientes||[]).filter(c=>!codigosCatalogoActual.has(normalizarCodigo(c.code)));
+
+  setTxt('segRcCount', rcPendientes.length);
+  setTxt('segOcCount', ocPendientes.length);
+  setTxt('segSinAsignarCount', sinDespachar.length);
+  setTxt('segCodigosCount', codigosNuevos.length);
+
+  // Se ordena por fecha descendente (más reciente primero): en el orden natural del Excel
+  // las más viejas quedaban primero y las recientes (las que más importa revisar) se perdían
+  // fuera del límite de filas mostradas.
+  let rcOrdenadas = [...rcPendientes].sort((a,b)=> new Date(b.FEmision||0) - new Date(a.FEmision||0));
+  let ocOrdenadas = [...ocPendientes].sort((a,b)=> parseFechaDDMMYYYY(b.FechaOC) - parseFechaDDMMYYYY(a.FechaOC));
+  let sinDespacharOrdenadas = [...sinDespachar].sort((a,b)=> new Date(b.ultimaFecha||0) - new Date(a.ultimaFecha||0));
+  const LIMITE_FILAS = 1000;
+  let notaCorte = (total)=> total>LIMITE_FILAS ? `<tr><td colspan="7" style="color:var(--warning);">⚠️ Mostrando las ${LIMITE_FILAS} más recientes de ${total} — hay más pendientes de lo que cabe aquí.</td></tr>` : '';
+
+  setHtml('segRcTable', rcOrdenadas.slice(0,LIMITE_FILAS).map(r=>`<tr><td>${r.FEmision? new Date(r.FEmision).toLocaleDateString('es-CL'):''}</td><td>${r.NumReq||''}</td><td><span class="code-tag">${r.CodProd||''}</span></td><td>${r.DesProd||''}</td><td>${r.Cantidad||''} ${r.CodUMed||''}</td><td>${r.Solicita||''}</td><td>${r.DescEtapa||'Sin Orden de Compra'}</td></tr>`).join('') + notaCorte(rcOrdenadas.length) || '<tr><td colspan="7">Sin pendientes 🎉</td></tr>');
+  setHtml('segOcTable', ocOrdenadas.slice(0,LIMITE_FILAS).map(r=>`<tr><td>${r.FechaOC||''}</td><td>${r.Numoc||''}</td><td><span class="code-tag">${r.CodProd||''}</span></td><td>${r.DesProd||''}</td><td>${r.NomAux||''}</td><td>${r.Saldo||0} ${r.CodUMed||''}</td><td>${(r.DesEtapaOC||'').trim()||'Sin Recepción'}</td></tr>`).join('') + notaCorte(ocOrdenadas.length) || '<tr><td colspan="7">Sin pendientes 🎉</td></tr>');
+  SEG_SIN_ASIGNAR = sinDespacharOrdenadas;
+  setHtml('segSinAsignarTable', sinDespacharOrdenadas.slice(0,LIMITE_FILAS).map((c,i)=>{ let yaRegistrado=totalRegistradoLocalPorCodigo(obra.id, c.code); let btnParcial=yaRegistrado>0.0001?`<button class="btn btn-danger btn-sm" title="Este material llegó parcial: aún falta registrar la diferencia" onclick="verDetalleParcialPorIndice(${i})">⚠️ Parcial</button> `:''; return `<tr><td>${c.ultimaFecha? new Date(c.ultimaFecha).toLocaleDateString('es-CL'):''}</td><td><span class="code-tag">${c.code}</span></td><td>${c.name}</td><td>${c.pendiente} ${c.unit}</td><td>${btnParcial}<button class="btn btn-primary btn-sm" onclick="registrarEnMiObraPorIndice(${i})">➕ Registrar en mi Obra</button></td></tr>`; }).join('') + notaCorte(sinDespacharOrdenadas.length).replace('colspan="7"','colspan="5"') || '<tr><td colspan="5">Nada pendiente de despacho 🎉</td></tr>');
+  SEG_CODIGOS_NUEVOS = codigosNuevos;
+  setHtml('segCodigosTable', codigosNuevos.map((c,i)=>`<tr><td><span class="code-tag">${c.code}</span></td><td>${c.name}</td><td>${c.unit||'-'}</td><td><button class="btn btn-primary btn-sm" onclick="prellenarNuevoMaterialPorIndice(${i})">➕ Agregar al Catálogo</button></td></tr>`).join('') || '<tr><td colspan="4">Sin códigos pendientes</td></tr>');
+}
+
+// Los botones de la tabla llaman a estas dos funciones "PorIndice" (con un número, no con el
+// texto del producto) para no depender de escapar comillas/caracteres especiales del Excel.
+function prellenarNuevoMaterialPorIndice(i){ let c=SEG_CODIGOS_NUEVOS[i]; if(!c) return; prellenarNuevoMaterial(c.code, c.name); }
+function registrarEnMiObraPorIndice(i){ let c=SEG_SIN_ASIGNAR[i]; if(!c) return; registrarEnMiObra(c.code, c.name, c.unit, c.pendiente); }
+function verDetalleParcialPorIndice(i){
+  let c = SEG_SIN_ASIGNAR[i]; if(!c) return;
+  let obra = getObraActiva(); if(!obra) return;
+  let yaRegistrado = totalRegistradoLocalPorCodigo(obra.id, c.code);
+  alert(`⚠️ ${c.code} - ${c.name}\n\nBodega Central marca un ingreso total de ${c.totalEnt} ${c.unit}.\nYa registraste en tu obra: ${yaRegistrado} ${c.unit}.\nAún falta por registrar: ${c.pendiente} ${c.unit}.\n\nEste material NO llegó completo todavía. Cuando registres la diferencia (otra Entrada, o corrigiendo la existente), desaparecerá de esta lista.`);
+}
+
+function prellenarNuevoMaterial(code, name){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  let navCat = document.querySelector('.nav-item[data-tab="catalogo"]');
+  if(navCat) navCat.classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden'));
+  let tabCat = document.getElementById('tab-catalogo');
+  if(tabCat) tabCat.classList.remove('hidden');
+  document.getElementById('matCode').value = code;
+  document.getElementById('matName').value = name;
+  // Forzar Stock Inicial en 0 (por si quedó algo escrito de antes) — Bodega Central es 100% información,
+  // agregar un material al catálogo nunca debe generar stock por sí solo.
+  let stockEl = document.getElementById('matStock'); if(stockEl) stockEl.value = '0';
+  document.getElementById('matName').focus();
+  showToast('📦 Completa categoría y unidad, luego agrega el material (esto NO importa entradas del Excel)');
+}
+
+// ======================== IMPORTACIÓN MANUAL (original, funcional) ========================
+function importJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.users) {
+        Object.assign(DB, data);
+        if(!DB.obras) DB.obras=[]; if(!DB.stockPorObra) DB.stockPorObra={};
+        if(DB.archivosGuia){ ARCHIVOS_GUIA=DB.archivosGuia; delete DB.archivosGuia; await persistArchivos(); }
+        migrateToMultiObra();
+        migrateExcelIntegration();
+        await loadExcelSeguimientoFromStorage(); // si el archivo importado trae el formato viejo, lo saca de DB y lo manda a IndexedDB
+        persistData();
+        renderObraSelectors();
+        renderAll();
+        updateStorageBar();
+        updateBackupCircle();
+        showToast('✅ Datos importados correctamente');
+        if (folderHandle) saveCurrentToFolder(folderHandle, true);
+      } else {
+        throw new Error('Archivo inválido');
+      }
+    } catch (err) {
+      showToast('❌ Archivo inválido');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ======================== RESTO DE FUNCIONES (originales, sin cambios) ========================
+function renderAll(){ if(currentUser){ renderObraSelectors(); renderDashboard(); renderCatalog(); renderInventory(); renderEntries(); renderExits(); renderArchivos(); renderConfig(); checkCriticalAlerts(); updateBrand(); renderSeguimiento(); } }
+// Materiales que ya tienen al menos una Entrada o Salida en la obra activa — el catálogo es compartido
+// entre obras, así que sin este filtro cualquier material nunca usado en esta obra aparecería como
+// "crítico" solo por tener stock 0, aunque simplemente nunca lo hayas tocado.
+function materialesConMovimientoEnObra(){
+  let set = new Set();
+  DB.entries.forEach(e=>{ if(e.obraId===DB.obraActivaId) set.add(e.materialId); });
+  DB.exits.forEach(e=>{ if(e.obraId===DB.obraActivaId) set.add(e.materialId); });
+  return set;
+}
+function renderDashboard(){ let conMovimiento=materialesConMovimientoEnObra(); let materialesObra=DB.materials.filter(m=>conMovimiento.has(m.id)); let crit=materialesObra.filter(m=>getStock(m.id)<=m.min).length, warn=materialesObra.filter(m=>getStock(m.id)>m.min&&getStock(m.id)<=m.min*1.5).length; document.getElementById('statsGrid').innerHTML=`<div class="stat-card"><h3>Total Materiales</h3><div class="value">${materialesObra.length}</div></div><div class="stat-card"><h3>⚠️ Stock Crítico</h3><div class="value" style="color:var(--danger)">${crit}</div></div><div class="stat-card"><h3>🟠 Precaución</h3><div class="value" style="color:var(--warning)">${warn}</div></div>`; let recent=[...DB.entries.filter(e=>e.obraId===DB.obraActivaId).map(e=>({...e,type:'ENTRADA'})),...DB.exits.filter(e=>e.obraId===DB.obraActivaId).map(e=>({...e,type:'SALIDA'}))].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10); document.getElementById('recentMovements').innerHTML=recent.map(r=>{let m=DB.materials.find(x=>x.id===r.materialId); return`<tr><td>${r.date}</td><td><span class="alert-badge ${r.type==='ENTRADA'?'alert-ok':'alert-warning'}">${r.type}</span></td><td>${m?.name||'?'}</td><td>${r.quantity}</td><td>${r.guide||r.ot}</td></tr>`;}).join('')||'<tr><td colspan="5">Sin movimientos</td></tr>'; }
+function checkCriticalAlerts(){ let conMovimiento=materialesConMovimientoEnObra(); let c=DB.materials.filter(m=>conMovimiento.has(m.id) && getStock(m.id)<=m.min); document.getElementById('alertContainer').innerHTML=c.length?`<div class="alert-panel"><h3>🚨 Stock Crítico (${c.length})</h3><div class="critical-list"><ul>${c.map(m=>`<li><div class="prod-info"><span class="code-tag">${m.code}</span><span>${m.name}</span></div><div class="prod-meta"><span class="alert-badge alert-critical">${getStock(m.id)} ${m.unit}</span></div></li>`).join('')}</ul></div></div>`:''; }
+function renderCatalog(){ let f=PAG.catalog.filter; let data=f?DB.materials.filter(m=>m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f)):DB.materials; let page=data.slice((PAG.catalog.page-1)*PAG.perPage, PAG.catalog.page*PAG.perPage); document.getElementById('catalogTable').innerHTML=page.map(m=>`<tr><td><span class="code-tag">${m.code}</span></td><td>${m.name}</td><td>${m.category}</td><td>${m.unit}</td><td>${getStock(m.id)}</td><td>${m.min}</td><td><div class="row-actions"><button class="btn btn-outline btn-sm" onclick="openEditMaterial('${m.id}')">✏️</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteMaterial('${m.id}')">🗑️</button></div></td></tr>`).join('')||'<tr><td colspan="7">Sin resultados</td></tr>'; renderPag('paginationCatalog',data.length,PAG.catalog.page,'catalog'); }
+function renderInventory(){ let f=PAG.inventory.filter; let conMovimiento=materialesConMovimientoEnObra(); let baseObra=DB.materials.filter(m=>conMovimiento.has(m.id)); let data=f?baseObra.filter(m=>m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f)):baseObra; let page=data.slice((PAG.inventory.page-1)*PAG.perPage, PAG.inventory.page*PAG.perPage); let getStatus=m=>{let s=getStock(m.id); if(s<=m.min)return{label:'CRÍTICO',class:'alert-critical'}; if(s<=m.min*1.5)return{label:'PRECAUCIÓN',class:'alert-warning'}; return{label:'OK',class:'alert-ok'};}; document.getElementById('inventoryTable').innerHTML=page.map(m=>{let s=getStatus(m); return`<tr class="${s.class==='alert-critical'?'row-critical':s.class==='alert-warning'?'row-warning':''}"><td><span class="code-tag">${m.code}</span></td><td>${m.name}</td><td>${m.category}</td><td>${m.unit}</td><td><strong>${getStock(m.id)}</strong></td><td>${m.min}</td><td><span class="alert-badge ${s.class}">${s.label}</span></td></tr>`;}).join('')||'<tr><td colspan="7">Sin resultados</td></tr>'; renderPag('paginationInventory',data.length,PAG.inventory.page,'inventory'); }
+function renderEntries(){ let f=PAG.entries.filter; let base=DB.entries.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.guide.toLowerCase().includes(f)||(e.receiver||'').toLowerCase().includes(f)||(e.receiverName||'').toLowerCase().includes(f);}):base; let page=data.slice((PAG.entries.page-1)*PAG.perPage, PAG.entries.page*PAG.perPage); document.getElementById('entriesTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let receptorTxt=e.receiverName?`${e.receiverName} — ${e.receiver||''}`:(e.receiver||''); let pend=m?pendienteBodegaCentralPorCodigo(DB.obraActivaId, m.code):0; let pendTxt=pend>0.0001?`<span style="color:var(--danger); font-weight:600;">${pend} ${m?.unit||''}</span>`:'—'; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}</td><td style="white-space:nowrap; color:var(--success); font-weight:600;">+${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.guide||'').replace(/"/g,'&quot;')}">${e.guide}</td><td style="white-space:nowrap;" title="${receptorTxt.replace(/"/g,'&quot;')}">${receptorTxt}</td><td style="white-space:nowrap;">${pendTxt}</td><td style="white-space:nowrap;">${e.guiaArchivoId?`<button class="btn btn-outline btn-sm" title="Ver guía adjunta" onclick="verArchivo('${e.guiaArchivoId}')">📎</button> `:''}<button class="btn btn-outline btn-sm" onclick="openEditEntry('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteEntry('${e.id}')">🗑️</button></td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationEntries',data.length,PAG.entries.page,'entries'); }
+function renderExits(){ let f=PAG.exits.filter; let base=DB.exits.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f);}):base; let page=data.slice((PAG.exits.page-1)*PAG.perPage, PAG.exits.page*PAG.perPage); document.getElementById('exitsTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let puntoObs=e.observaciones?`<span onclick="verObservacionSalida('${e.id}')" title="Ver observación" style="display:inline-block;width:8px;height:8px;background:var(--danger);border-radius:50%;cursor:pointer;margin-left:6px;vertical-align:middle;"></span>`:''; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}${puntoObs}</td><td style="white-space:nowrap; color:var(--danger); font-weight:600;">-${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.ot||'').replace(/"/g,'&quot;')}">${e.ot}</td><td style="white-space:nowrap;">${e.specialty}</td><td style="white-space:nowrap;" title="${(e.requester||'').replace(/"/g,'&quot;')}">${e.requester}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEditExit('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteExit('${e.id}')">🗑️</button></td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationExits',data.length,PAG.exits.page,'exits'); }
+function verObservacionEntrada(id){ let e=DB.entries.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
+function verObservacionSalida(id){ let e=DB.exits.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
+function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button><tr></tr>`).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
+function updatePass(k){ let v=document.getElementById(`pass-${k}`).value.trim(); if(!v) return showToast('Escribe una clave'); DB.users.find(x=>x.user===k).pass=v; saveToStorage(); showToast('Clave actualizada'); }
+// "PorIndice": reciben la posición dentro de la lista (no el texto) para no depender de escapar
+// comillas u otros caracteres especiales que el usuario haya escrito en una unidad/categoría/etc.
+function editConfigItemPorIndice(type,idx){ let oldVal=DB[type][idx]; if(oldVal===undefined) return; let n=prompt(`Editar "${oldVal}"`,oldVal); if(n && n.trim() && n!==oldVal){ if(DB[type].includes(n.trim())) return showToast('Ya existe'); DB[type][idx]=n.trim(); saveToStorage(); renderConfig(); populateDropdowns(); showToast(`Editado a "${n.trim()}"`); } }
+function removeConfigItemPorIndice(type,idx){ let val=DB[type][idx]; if(val===undefined) return; if(!confirm(`¿Eliminar "${val}"?`)) return; DB[type].splice(idx,1); saveToStorage(); renderConfig(); populateDropdowns(); showToast('Eliminado'); }
+function addConfigItem(type,inputId){ let el=document.getElementById(inputId), val=el.value.trim(); if(!val) return showToast('Escribe un nombre'); if(DB[type].includes(val)) return showToast('Ya existe'); DB[type].push(val); el.value=''; saveToStorage(); renderConfig(); populateDropdowns(); showToast('Agregado'); }
+function populateDropdowns(){ let fill=(id,items)=>{ let el=document.getElementById(id); if(el) el.innerHTML='<option value="">Seleccionar...</option>'+items.map(x=>`<option value="${x}">${x}</option>`).join(''); }; fill('entryReceiver',DB.receivers); fill('editEntryReceiver',DB.receivers); fill('exitSpecialty',DB.specialties); fill('editExitSpecialty',DB.specialties); fill('matUnit',DB.units); fill('matCategory',DB.categories); fill('editMaterialCategory',DB.categories); fill('editMaterialUnit',DB.units); populateArchivoSelect('entryArchivoSelect'); populateReceiverNameList(); }
+function populateReceiverNameList(){ let dl=document.getElementById('receiverNameList'); if(!dl) return; let nombres=[...new Set(DB.entries.map(e=>e.receiverName).filter(Boolean))].sort((a,b)=>a.localeCompare(b)); dl.innerHTML=nombres.map(n=>`<option value="${n.replace(/"/g,'&quot;')}"></option>`).join(''); }
+function filterMaterials(context,query){ let dd=document.getElementById(`${context}Dropdown`); if(!dd) return; dd.innerHTML=''; if(!query){ dd.classList.remove('show'); return; } let q=query.toLowerCase().trim(); let matches=DB.materials.filter(m=>m.code.toLowerCase().includes(q)||m.name.toLowerCase().includes(q)).slice(0,12); if(matches.length===0) dd.innerHTML='<li class="no-match">🔍 Sin coincidencias</li>'; else matches.forEach(m=>{ let li=document.createElement('li'); li.innerHTML=`<span class="code-tag">${m.code}</span> ${m.name}`; li.onclick=()=>{ document.getElementById(`${context}MaterialId`).value=m.id; document.getElementById(`${context}Selected`).innerText=`${m.code} - ${m.name}`; document.getElementById(`${context}Search`).value=m.name; dd.classList.remove('show'); }; dd.appendChild(li); }); dd.classList.add('show'); }
+function handleSearch(type){ clearTimeout(searchTimeout); searchTimeout=setTimeout(()=>{ let filter=document.getElementById(type==='catalog'?'searchCatalog':type==='inventory'?'searchInventory':type==='entries'?'searchEntries':'searchExits').value.toLowerCase(); PAG[type].filter=filter; PAG[type].page=1; if(type==='catalog') renderCatalog(); else if(type==='inventory') renderInventory(); else if(type==='entries') renderEntries(); else if(type==='exits') renderExits(); },300); }
+function renderPag(containerId,total,curr,pageType){ let el=document.getElementById(containerId); if(!el||total===0) return el.innerHTML=''; let pages=Math.ceil(total/PAG.perPage); let html=`<div class="pagination-info">Mostrando ${(curr-1)*PAG.perPage+1}-${Math.min(curr*PAG.perPage,total)} de ${total}</div><div class="pagination-controls"><button class="page-btn" ${curr===1?'disabled':''} onclick="setPag('${pageType}',${curr-1})">‹ Anterior</button>`; for(let i=1;i<=pages;i++){ if(pages>7&&i>3&&i<pages-1){ if(i===4) html+=`<span>...</span>`; continue; } html+=`<button class="page-btn ${i===curr?'active':''}" onclick="setPag('${pageType}',${i})">${i}</button>`; } html+=`<button class="page-btn" ${curr===pages?'disabled':''} onclick="setPag('${pageType}',${curr+1})">Siguiente ›</button></div>`; el.innerHTML=html; }
+function setPag(t,p){ PAG[t].page=p; if(t==='catalog') renderCatalog(); else if(t==='inventory') renderInventory(); else if(t==='entries') renderEntries(); else if(t==='exits') renderExits(); }
+function deleteEntry(id){ if(!confirm('¿Eliminar entrada?')) return; let idx=DB.entries.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.entries[idx]; addStock(e.materialId,-e.quantity); DB.entries.splice(idx,1); saveToStorage(); showToast('Entrada eliminada'); } }
+function deleteExit(id){ if(!confirm('¿Eliminar salida?')) return; let idx=DB.exits.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.exits[idx]; addStock(e.materialId,e.quantity); DB.exits.splice(idx,1); saveToStorage(); showToast('Salida eliminada'); } }
+function clearAllEntries(){ if(!confirm('¿Eliminar TODAS las entradas de esta obra?')) return; DB.entries.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,-e.quantity); }); DB.entries=DB.entries.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las entradas de la obra eliminadas'); }
+function clearAllExits(){ if(!confirm('¿Eliminar TODAS las salidas de esta obra?')) return; DB.exits.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,e.quantity); }); DB.exits=DB.exits.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las salidas de la obra eliminadas'); }
+function agregarMaterial(){
+  var code = document.getElementById('matCode').value.trim().toUpperCase();
+  if(!code){ alert('Ingresa un código'); return; }
+  var name = document.getElementById('matName').value.trim();
+  if(!name){ alert('Ingresa un nombre'); return; }
+  var category = document.getElementById('matCategory').value;
+  if(!category){ alert('Selecciona una categoría'); return; }
+  var unit = document.getElementById('matUnit').value;
+  if(!unit){ alert('Selecciona una unidad'); return; }
+  if(DB.materials.some(function(m){ return m.code === code; })){
+    alert('❌ El código ' + code + ' ya existe');
+    return;
+  }
+  var newMaterialId = Date.now().toString();
+  DB.materials.push({
+    id: newMaterialId,
+    code: code,
+    name: name,
+    category: category,
+    unit: unit,
+    min: parseInt(document.getElementById('matMin').value) || 5
+  });
+  if(!DB.obraActivaId){
+    showToast('⚠️ Material agregado al catálogo, pero no hay obra activa: crea una obra para registrar stock');
+  } else {
+    setStock(newMaterialId, parseInt(document.getElementById('matStock').value) || 0);
+  }
+  saveToStorage();
+  // Limpiar campos
+  document.getElementById('matCode').value = '';
+  document.getElementById('matName').value = '';
+  document.getElementById('matStock').value = '0';
+  document.getElementById('matMin').value = '5';
+  populateDropdowns();
+  document.getElementById('matCode').focus();
+  // Crear overlay de confirmación sobre el body, completamente independiente del DOM de la app
+  setTimeout(function(){
+    var existing = document.getElementById('_confirmOverlay');
+    if(existing) existing.remove();
+    var d = document.createElement('div');
+    d.id = '_confirmOverlay';
+    d.innerText = '✅ Material agregado correctamente';
+    d.setAttribute('style', [
+      'position:fixed',
+      'top:80px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'background:#059669',
+      'color:#ffffff',
+      'padding:16px 32px',
+      'border-radius:10px',
+      'font-size:16px',
+      'font-weight:700',
+      'text-align:center',
+      'z-index:2147483647',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.4)',
+      'border:3px solid #047857',
+      'pointer-events:none'
+    ].join(';'));
+    document.body.appendChild(d);
+    setTimeout(function(){ d.remove(); }, 2500);
+  }, 200);
+}
+function saveMaterial(e){ if(e) e.preventDefault(); agregarMaterial(); }
+function deleteMaterial(id){ if(confirm('¿Eliminar material del catálogo?')){ DB.materials=DB.materials.filter(m=>m.id!==id); saveToStorage(); showToast('🗑️ Eliminado'); } }
+function openEditMaterial(id){ let m=DB.materials.find(x=>x.id===id); if(!m) return; document.getElementById('editMaterialId').value=m.id; document.getElementById('editMaterialCode').value=m.code; document.getElementById('editMaterialName').value=m.name; populateDropdowns(); document.getElementById('editMaterialCategory').value=m.category; document.getElementById('editMaterialUnit').value=m.unit; document.getElementById('editMaterialMin').value=m.min; openModal('editMaterialModal'); }
+function saveEditMaterial(e){ e.preventDefault(); let id=document.getElementById('editMaterialId').value; let m=DB.materials.find(x=>x.id===id); if(!m) return; let newCode=document.getElementById('editMaterialCode').value.trim().toUpperCase(); if(newCode!==m.code && DB.materials.some(x=>x.code===newCode)) return showToast('❌ Código duplicado'); m.code=newCode; m.name=document.getElementById('editMaterialName').value.trim(); m.category=document.getElementById('editMaterialCategory').value; m.unit=document.getElementById('editMaterialUnit').value; m.min=parseInt(document.getElementById('editMaterialMin').value)||0; saveToStorage(); closeModal('editMaterialModal'); showToast('✅ Material actualizado'); }
+function openEditEntry(id){ let e=DB.entries.find(x=>x.id===id); if(!e) return; let m=DB.materials.find(x=>x.id===e.materialId); document.getElementById('editEntryId').value=e.id; document.getElementById('editEntryCode').value=m?.code; document.getElementById('editEntryMat').value=m?.name; document.getElementById('editEntryQty').value=e.quantity; document.getElementById('editEntryGuide').value=e.guide; populateDropdowns(); document.getElementById('editEntryReceiverName').value=e.receiverName||''; document.getElementById('editEntryReceiver').value=e.receiver||''; document.getElementById('editEntryObservaciones').value=e.observaciones||''; openModal('editEntryModal'); }
+function saveEditEntry(e){ e.preventDefault(); let id=document.getElementById('editEntryId').value, idx=DB.entries.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.entries[idx].quantity, newQty=parseInt(document.getElementById('editEntryQty').value); addStock(DB.entries[idx].materialId, newQty-oldQty); DB.entries[idx].quantity=newQty; DB.entries[idx].guide=document.getElementById('editEntryGuide').value; DB.entries[idx].receiverName=document.getElementById('editEntryReceiverName').value.trim(); let cargoVal=document.getElementById('editEntryReceiver').value; if(cargoVal) DB.entries[idx].receiver=cargoVal; DB.entries[idx].observaciones=document.getElementById('editEntryObservaciones').value.trim(); saveToStorage(); closeModal('editEntryModal'); showToast('✏️ Entrada corregida'); }
+function openEditExit(id){ let e=DB.exits.find(x=>x.id===id); if(!e) return; let m=DB.materials.find(x=>x.id===e.materialId); document.getElementById('editExitId').value=e.id; document.getElementById('editExitCode').value=m?.code; document.getElementById('editExitMat').value=m?.name; document.getElementById('editExitQty').value=e.quantity; document.getElementById('editExitOT').value=e.ot; populateDropdowns(); document.getElementById('editExitSpecialty').value=e.specialty; document.getElementById('editExitObservaciones').value=e.observaciones||''; openModal('editExitModal'); }
+function saveEditExit(e){ e.preventDefault(); let id=document.getElementById('editExitId').value, idx=DB.exits.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.exits[idx].quantity, newQty=parseInt(document.getElementById('editExitQty').value), matId=DB.exits[idx].materialId; let projectedStock=getStock(matId)+oldQty-newQty; if(projectedStock<0) return showToast('❌ Stock negativo'); addStock(matId, oldQty-newQty); DB.exits[idx].quantity=newQty; DB.exits[idx].ot=document.getElementById('editExitOT').value; DB.exits[idx].specialty=document.getElementById('editExitSpecialty').value; DB.exits[idx].observaciones=document.getElementById('editExitObservaciones').value.trim(); saveToStorage(); closeModal('editExitModal'); showToast('✏️ Salida corregida'); }
+function cleanOrphanedRecords(silent=false){ let validIds=new Set(DB.materials.map(m=>m.id)); let ce=DB.entries.filter(e=>validIds.has(e.materialId)).length, cx=DB.exits.filter(e=>validIds.has(e.materialId)).length; DB.entries=DB.entries.filter(e=>validIds.has(e.materialId)); DB.exits=DB.exits.filter(e=>validIds.has(e.materialId)); DB.obras.forEach(obra=>{ let bucket=ensureObraStockBucket(obra.id); DB.materials.forEach(m=>{ let ent=DB.entries.filter(e=>e.materialId===m.id && e.obraId===obra.id).reduce((s,e)=>s+e.quantity,0); let sal=DB.exits.filter(e=>e.materialId===m.id && e.obraId===obra.id).reduce((s,e)=>s+e.quantity,0); bucket[m.id]=ent-sal; }); }); saveToStorage(); if(!silent) showToast(`✅ ${ce+cx>0?ce+cx+' huérfanos eliminados':'Sin huérfanos'}`); }
+function fullResetData(){ if(confirm('⚠️ BORRAR TODOS LOS DATOS?')){ localStorage.removeItem('faena_inventory_v2'); localStorage.removeItem('faena_archivos_v1'); indexedDB.deleteDatabase('FaenaFolderDB'); indexedDB.deleteDatabase('FaenaArchivosDB'); indexedDB.deleteDatabase('FaenaExcelSeguimientoDB'); location.reload(); } }
+function getReporteData(){
+  let obra = getObraActiva();
+  let nombreObra = obra ? obra.nombre : (DB.config.projectName || 'Sin Obra');
+  let tagObra = obra ? (obra.tag || '') : '';
+  let logo = obra ? obra.logo : null;
+  let entradasObra = DB.entries.filter(e => e.obraId === DB.obraActivaId);
+  let salidasObra = DB.exits.filter(e => e.obraId === DB.obraActivaId);
+  let stockRows = DB.materials.map(m => {
+    let s = getStock(m.id);
+    let estado = s <= m.min ? 'CRÍTICO' : (s <= m.min * 1.5 ? 'PRECAUCIÓN' : 'OK');
+    return { code: m.code, name: m.name, category: m.category, unit: m.unit, stock: s, min: m.min, estado };
+  });
+  let critCount = stockRows.filter(r => r.estado === 'CRÍTICO').length;
+  let warnCount = stockRows.filter(r => r.estado === 'PRECAUCIÓN').length;
+  let entradasRows = entradasObra.map(e => { let m = DB.materials.find(x => x.id === e.materialId); return { date: e.date, code: m?.code || '?', name: m?.name || '?', qty: e.quantity, guide: e.guide, receiver: e.receiver, receiverName: e.receiverName || '' }; });
+  let salidasRows = salidasObra.map(e => { let m = DB.materials.find(x => x.id === e.materialId); return { date: e.date, code: m?.code || '?', name: m?.name || '?', qty: e.quantity, ot: e.ot, specialty: e.specialty, requester: e.requester }; });
+  return { nombreObra, tagObra, logo, stockRows, entradasRows, salidasRows, critCount, warnCount, fecha: new Date() };
+}
+
+function generateExcel(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea o selecciona una obra primero.');
+  showToast('Generando Excel...');
+  setTimeout(()=>{
+    let d = getReporteData();
+    let wb = XLSX.utils.book_new();
+    let fechaStr = d.fecha.toLocaleString('es-CL');
+
+    // ---- Helpers de estilo (paleta consistente con la app) ----
+    const COLOR_PRIMARY = '2563EB', COLOR_SUCCESS = '10B981', COLOR_DANGER = 'EF4444', COLOR_WARNING = 'F59E0B';
+    const THIN_BORDER = { style:'thin', color:{rgb:'CBD5E1'} };
+    const BORDER_ALL = { top:THIN_BORDER, bottom:THIN_BORDER, left:THIN_BORDER, right:THIN_BORDER };
+    function headerStyle(bgColor){ return { fill:{fgColor:{rgb:bgColor}}, font:{bold:true, color:{rgb:'FFFFFF'}, sz:11}, alignment:{horizontal:'center', vertical:'center'}, border:BORDER_ALL }; }
+    function titleStyle(){ return { font:{bold:true, sz:16, color:{rgb:COLOR_PRIMARY}} }; }
+    function subtitleStyle(){ return { font:{bold:true, sz:12, color:{rgb:'334155'}}, fill:{fgColor:{rgb:'F1F5F9'}} }; }
+    function labelStyle(){ return { font:{bold:true, color:{rgb:'334155'}} }; }
+    function bodyStyle(){ return { border:BORDER_ALL, font:{sz:10} }; }
+    function bodyStyleAlt(bg){ return { border:BORDER_ALL, font:{sz:10}, fill:{fgColor:{rgb:bg}} }; }
+    function applyRowStyle(ws, row, colCount, style){ for(let c=1; c<=colCount; c++){ let addr = XLSX.utils.encode_cell({r:row, c:c}); if(ws[addr]) ws[addr].s = style; } }
+
+    // ---- Hoja Resumen ----
+    let wsResumen = XLSX.utils.aoa_to_sheet([
+      [], [],
+      ['', 'REPORTE DE INVENTARIO DE OBRA'],
+      ['', 'Obra:', d.nombreObra],
+      ['', 'Descripción:', d.tagObra || '-'],
+      ['', 'Fecha de generación:', fechaStr],
+      [],
+      ['', 'RESUMEN EJECUTIVO'],
+      ['', 'Total materiales en catálogo', d.stockRows.length],
+      ['', 'Materiales en estado crítico', d.critCount],
+      ['', 'Materiales en precaución', d.warnCount],
+      ['', 'Total entradas registradas', d.entradasRows.length],
+      ['', 'Total salidas registradas', d.salidasRows.length]
+    ]);
+    wsResumen['!cols'] = [{wch:2},{wch:30},{wch:24}];
+    wsResumen['!merges'] = [{s:{r:2,c:1},e:{r:2,c:2}},{s:{r:7,c:1},e:{r:7,c:2}}];
+    wsResumen['B3'].s = titleStyle();
+    wsResumen['B4'].s = labelStyle(); wsResumen['B5'].s = labelStyle(); wsResumen['B6'].s = labelStyle();
+    wsResumen['B8'].s = subtitleStyle();
+    ['B9','B10','B11','B12','B13'].forEach(addr=>{ if(wsResumen[addr]) wsResumen[addr].s = {font:{color:{rgb:'334155'}}}; });
+    if(wsResumen['C10']) wsResumen['C10'].s = {font:{bold:true,color:{rgb:COLOR_DANGER}}};
+    if(wsResumen['C11']) wsResumen['C11'].s = {font:{bold:true,color:{rgb:COLOR_WARNING}}};
+    XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
+
+    // Helper: agrega bloque de título (B2:B4) a una hoja antes de su tabla
+    function addPageTitle(ws, titulo, numCols){
+      ws['B2'] = { t:'s', v: titulo };
+      ws['B3'] = { t:'s', v: `Obra: ${d.nombreObra}` };
+      ws['B4'] = { t:'s', v: `Generado: ${fechaStr}` };
+      ws['B2'].s = { font:{bold:true, sz:14, color:{rgb:COLOR_PRIMARY}} };
+      ws['B3'].s = { font:{bold:true, sz:11, color:{rgb:'334155'}} };
+      ws['B4'].s = { font:{sz:9, color:{rgb:'64748B'}} };
+      ws['!merges'] = (ws['!merges']||[]).concat([
+        {s:{r:1,c:1},e:{r:1,c:numCols}},
+        {s:{r:2,c:1},e:{r:2,c:numCols}},
+        {s:{r:3,c:1},e:{r:3,c:numCols}}
+      ]);
+      // Expandir el rango de la hoja para que Excel no oculte las filas del título
+      let currentRef = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : {s:{r:0,c:0},e:{r:0,c:0}};
+      if(currentRef.s.r > 1) currentRef.s.r = 1;
+      if(currentRef.s.c > 0) currentRef.s.c = 0;
+      ws['!ref'] = XLSX.utils.encode_range(currentRef);
+    }
+
+    // ---- Hoja Stock (título + tabla desde fila 6) ----
+    let stockAoa = [[], [], [], [], [], ['', 'Código','Material','Categoría','Unidad','Stock','Mínimo','Estado'], ...d.stockRows.map(r=>['', r.code, r.name, r.category, r.unit, r.stock, r.min, r.estado])];
+    let wsStock = XLSX.utils.aoa_to_sheet(stockAoa);
+    wsStock['!cols'] = [{wch:2},{wch:14},{wch:30},{wch:18},{wch:10},{wch:10},{wch:10},{wch:14}];
+    addPageTitle(wsStock, 'STOCK ACTUAL DE MATERIALES', 7);
+    applyRowStyle(wsStock, 5, 7, headerStyle(COLOR_PRIMARY));
+    d.stockRows.forEach((r, i)=>{
+      let rowIdx = i + 6;
+      let bg = r.estado==='CRÍTICO' ? 'FEE2E2' : (r.estado==='PRECAUCIÓN' ? 'FEF3C7' : null);
+      applyRowStyle(wsStock, rowIdx, 7, bg ? bodyStyleAlt(bg) : bodyStyle());
+    });
+    let lastRowStock = d.stockRows.length + 6;
+    wsStock['!autofilter'] = { ref: `B6:H${lastRowStock}` };
+    XLSX.utils.book_append_sheet(wb, wsStock, 'Stock');
+
+    // ---- Hoja Entradas (solo si hay datos, título + tabla desde fila 6) ----
+    if(d.entradasRows.length > 0){
+      let entAoa = [[], [], [], [], [], ['', 'Fecha','Código','Material','Cantidad','N° Guía','Nombre','Cargo'], ...d.entradasRows.map(r=>['', r.date, r.code, r.name, r.qty, r.guide, r.receiverName||'', r.receiver])];
+      let wsEnt = XLSX.utils.aoa_to_sheet(entAoa);
+      wsEnt['!cols'] = [{wch:2},{wch:12},{wch:14},{wch:30},{wch:10},{wch:16},{wch:20},{wch:16}];
+      addPageTitle(wsEnt, 'ENTRADAS REGISTRADAS', 7);
+      applyRowStyle(wsEnt, 5, 7, headerStyle(COLOR_SUCCESS));
+      d.entradasRows.forEach((r, i)=>{ applyRowStyle(wsEnt, i+6, 7, bodyStyle()); });
+      wsEnt['!autofilter'] = { ref: `B6:H${d.entradasRows.length+6}` };
+      XLSX.utils.book_append_sheet(wb, wsEnt, 'Entradas');
+    }
+
+    // ---- Hoja Salidas (solo si hay datos, título + tabla desde fila 6) ----
+    if(d.salidasRows.length > 0){
+      let salAoa = [[], [], [], [], [], ['', 'Fecha','Código','Material','Cantidad','N° O.T.','Especialidad','Solicitante'], ...d.salidasRows.map(r=>['', r.date, r.code, r.name, r.qty, r.ot, r.specialty, r.requester])];
+      let wsSal = XLSX.utils.aoa_to_sheet(salAoa);
+      wsSal['!cols'] = [{wch:2},{wch:12},{wch:14},{wch:30},{wch:10},{wch:14},{wch:18},{wch:20}];
+      addPageTitle(wsSal, 'SALIDAS REGISTRADAS', 7);
+      applyRowStyle(wsSal, 5, 7, headerStyle(COLOR_DANGER));
+      d.salidasRows.forEach((r, i)=>{ applyRowStyle(wsSal, i+6, 7, bodyStyle()); });
+      wsSal['!autofilter'] = { ref: `B6:H${d.salidasRows.length+6}` };
+      XLSX.utils.book_append_sheet(wb, wsSal, 'Salidas');
+    }
+
+    XLSX.writeFile(wb, `Reporte_${d.nombreObra.replace(/\s/g,'_')}_${d.fecha.toISOString().slice(0,10)}.xlsx`);
+    showToast('✅ Excel generado');
+  },100);
+}
+
+// ======================== PDF DE SEGUIMIENTO (para reclamar/apurar a Bodega Central) ========================
+function _pdfPiePagina(doc, pageWidth){
+  let totalPages = doc.internal.getNumberOfPages();
+  for(let i=1;i<=totalPages;i++){
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150,150,150);
+    doc.text(`Página ${i} de ${totalPages}`, pageWidth/2, doc.internal.pageSize.getHeight()-8, {align:'center'});
+  }
+}
+function generarPDFOCPendientes(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa.');
+  let obra = getObraActiva();
+  let bucket = ensureExcelImportBucket(DB.obraActivaId);
+  let ocPendientes = (bucket.ocReferencia||[]).filter(r => Number(r.Saldo)>0);
+  if(ocPendientes.length===0) return showToast('✅ No hay Órdenes de Compra con saldo pendiente para descargar');
+  let ordenadas = [...ocPendientes].sort((a,b)=> parseFechaDDMMYYYY(b.FechaOC) - parseFechaDDMMYYYY(a.FechaOC));
+  showToast('Generando PDF...');
+  setTimeout(()=>{
+    let {jsPDF} = window.jspdf;
+    let doc = new jsPDF({format:'letter', unit:'mm'});
+    let pageWidth = doc.internal.pageSize.getWidth();
+    let fecha = new Date();
+    let fechaStr = fecha.toLocaleString('es-CL');
+
+    doc.setFillColor(37,99,235);
+    doc.rect(0,0,pageWidth,36,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16);
+    doc.text('OC con Saldo Pendiente de Recepción', 14, 16);
+    doc.setFontSize(11);
+    doc.text(obra?.nombre || '—', 14, 26);
+    doc.setTextColor(0,0,0);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${fechaStr}`, pageWidth-14, 43, {align:'right'});
+    doc.setFontSize(10);
+    doc.setTextColor(100,116,139);
+    doc.text(`${ordenadas.length} Orden(es) de Compra con material aún sin recibir completo.`, 14, 43);
+
+    doc.autoTable({
+      startY: 49,
+      head: [['Fecha','N° OC','Código','Producto','Proveedor','Saldo','Estado']],
+      body: ordenadas.map(r=>[r.FechaOC||'', String(r.Numoc||''), r.CodProd||'', r.DesProd||'', r.NomAux||'', `${r.Saldo||0} ${r.CodUMed||''}`, (r.DesEtapaOC||'').trim()||'Sin Recepción']),
+      theme: 'grid',
+      headStyles: {fillColor:[37,99,235], textColor:255, fontStyle:'bold', fontSize:9},
+      alternateRowStyles: {fillColor:[248,250,252]},
+      styles: {fontSize:8, cellPadding:2.5, lineColor:[226,232,240], lineWidth:0.1},
+      columnStyles: { 5: {fontStyle:'bold', textColor:[239,68,68]} },
+      margin: {left:14, right:14}
+    });
+    _pdfPiePagina(doc, pageWidth);
+    doc.save(`OC_Pendientes_${(obra?.nombre||'obra').replace(/\s/g,'_')}_${fecha.toISOString().slice(0,10)}.pdf`);
+    showToast('✅ PDF generado');
+  },100);
+}
+function generarPDFBodegaCentralPendiente(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa.');
+  let obra = getObraActiva();
+  let bucket = ensureExcelImportBucket(DB.obraActivaId);
+  let sinDespachar = (bucket.entradasSalidasPorCodigo||[]).map(c=>({...c, pendiente: Math.max(0, c.totalEnt - totalRegistradoLocalPorCodigo(obra.id, c.code))})).filter(c=>c.pendiente > 0.0001);
+  if(sinDespachar.length===0) return showToast('✅ No hay material pendiente de despacho para descargar');
+  let ordenadas = [...sinDespachar].sort((a,b)=> new Date(b.ultimaFecha||0) - new Date(a.ultimaFecha||0));
+  showToast('Generando PDF...');
+  setTimeout(()=>{
+    let {jsPDF} = window.jspdf;
+    let doc = new jsPDF({format:'letter', unit:'mm'});
+    let pageWidth = doc.internal.pageSize.getWidth();
+    let fecha = new Date();
+    let fechaStr = fecha.toLocaleString('es-CL');
+
+    doc.setFillColor(37,99,235);
+    doc.rect(0,0,pageWidth,36,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16);
+    doc.text('Material Pendiente de Despacho a Obra', 14, 16);
+    doc.setFontSize(11);
+    doc.text(obra?.nombre || '—', 14, 26);
+    doc.setTextColor(0,0,0);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${fechaStr}`, pageWidth-14, 43, {align:'right'});
+    doc.setFontSize(10);
+    doc.setTextColor(100,116,139);
+    doc.text(`${ordenadas.length} producto(s) recibidos en Bodega Central que aún no han sido despachados.`, 14, 43);
+
+    doc.autoTable({
+      startY: 49,
+      head: [['Última Entrada','Código','Producto','Pendiente de Despacho']],
+      body: ordenadas.map(r=>[r.ultimaFecha? new Date(r.ultimaFecha).toLocaleDateString('es-CL'):'', r.code||'', r.name||'', `${r.pendiente} ${r.unit||''}`]),
+      theme: 'grid',
+      headStyles: {fillColor:[37,99,235], textColor:255, fontStyle:'bold', fontSize:9},
+      alternateRowStyles: {fillColor:[248,250,252]},
+      styles: {fontSize:8, cellPadding:2.5, lineColor:[226,232,240], lineWidth:0.1},
+      columnStyles: { 3: {fontStyle:'bold', textColor:[239,68,68]} },
+      margin: {left:14, right:14}
+    });
+    _pdfPiePagina(doc, pageWidth);
+    doc.save(`Bodega_Central_Pendiente_${(obra?.nombre||'obra').replace(/\s/g,'_')}_${fecha.toISOString().slice(0,10)}.pdf`);
+    showToast('✅ PDF generado');
+  },100);
+}
+
+// Excel profesional de "Material Pendiente de Despacho": a diferencia del PDF (que resume una fila
+// por material), acá se lista una fila por cada entrada real a Bodega Central (con su propia N° OC),
+// aunque el mismo código de material se repita con distintas OC — así se ve el historial completo de
+// compras (por ejemplo cuando se pide más de algo y se genera una RC/OC nueva).
+function generarExcelBodegaCentralPendiente(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa.');
+  let obra = getObraActiva();
+  let bucket = ensureExcelImportBucket(DB.obraActivaId);
+  let sinDespachar = (bucket.entradasSalidasPorCodigo||[]).map(c=>({...c, pendiente: Math.max(0, c.totalEnt - totalRegistradoLocalPorCodigo(obra.id, c.code))})).filter(c=>c.pendiente > 0.0001);
+  if(sinDespachar.length===0) return showToast('✅ No hay material pendiente de despacho para descargar');
+  let pendienteMap = new Map(sinDespachar.map(c=>[normalizarCodigo(c.code), c]));
+  let filas = (bucket.entradasDetalle||[])
+    .filter(r=>pendienteMap.has(normalizarCodigo(r.code)))
+    .map(r=>{ let p = pendienteMap.get(normalizarCodigo(r.code)); return { fecha:r.fecha, orden:r.orden, code:r.code, name:r.name, unit:r.unit, cantidad:r.cantidad, pendiente:p.pendiente }; })
+    .sort((a,b)=> normalizarCodigo(a.code).localeCompare(normalizarCodigo(b.code)) || (new Date(a.fecha||0) - new Date(b.fecha||0)) );
+  if(filas.length===0) return showToast('✅ No hay material pendiente de despacho para descargar');
+
+  showToast('Generando Excel...');
+  setTimeout(()=>{
+    const COLOR_PRIMARY = '2563EB', COLOR_DANGER = 'EF4444';
+    const THIN_BORDER = { style:'thin', color:{rgb:'CBD5E1'} };
+    const BORDER_ALL = { top:THIN_BORDER, bottom:THIN_BORDER, left:THIN_BORDER, right:THIN_BORDER };
+    function headerStyle(){ return { fill:{fgColor:{rgb:COLOR_PRIMARY}}, font:{bold:true, color:{rgb:'FFFFFF'}, sz:11}, alignment:{horizontal:'center', vertical:'center'}, border:BORDER_ALL }; }
+    function bodyStyle(){ return { border:BORDER_ALL, font:{sz:10} }; }
+    function pendienteStyle(){ return { border:BORDER_ALL, font:{sz:10, bold:true, color:{rgb:COLOR_DANGER}} }; }
+    function applyRowStyle(ws, row, colCount, style){ for(let c=1; c<=colCount; c++){ let addr = XLSX.utils.encode_cell({r:row, c:c}); if(ws[addr]) ws[addr].s = style; } }
+
+    let fecha = new Date();
+    let fechaStr = fecha.toLocaleString('es-CL');
+    let tagObra = obra?.tag || '';
+
+    let aoa = [[], [], [], [], [],
+      ['', 'Fecha','N° OC','Código','Material','Unidad','Cantidad','Pendiente'],
+      ...filas.map(r=>['', r.fecha? new Date(r.fecha).toLocaleDateString('es-CL'):'', r.orden||'', r.code||'', r.name||'', r.unit||'', r.cantidad, r.pendiente])
+    ];
+    let ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:2},{wch:12},{wch:12},{wch:14},{wch:36},{wch:9},{wch:11},{wch:11}];
+
+    // Bloque de título (B2:B4), mismo estilo del resto de los reportes de la app
+    ws['B2'] = { t:'s', v: 'MATERIAL PENDIENTE DE DESPACHO — BODEGA CENTRAL' };
+    ws['B3'] = { t:'s', v: `Obra: ${obra?.nombre||'—'}${tagObra?` — Código: ${tagObra}`:''}` };
+    ws['B4'] = { t:'s', v: `Generado: ${fechaStr}` };
+    ws['B2'].s = { font:{bold:true, sz:14, color:{rgb:COLOR_PRIMARY}} };
+    ws['B3'].s = { font:{bold:true, sz:11, color:{rgb:'334155'}} };
+    ws['B4'].s = { font:{sz:9, color:{rgb:'64748B'}} };
+    ws['!merges'] = [
+      {s:{r:1,c:1},e:{r:1,c:7}},
+      {s:{r:2,c:1},e:{r:2,c:7}},
+      {s:{r:3,c:1},e:{r:3,c:7}}
+    ];
+
+    applyRowStyle(ws, 5, 7, headerStyle());
+    filas.forEach((r,i)=>{ let row=i+6; applyRowStyle(ws, row, 7, bodyStyle()); let addrPend=XLSX.utils.encode_cell({r:row,c:7}); if(ws[addrPend]) ws[addrPend].s = pendienteStyle(); });
+
+    let lastRow = filas.length + 6;
+    ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:lastRow-1, c:7}});
+    ws['!autofilter'] = { ref: `B6:H${lastRow}` };
+
+    let wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pendiente Bod. Central');
+    XLSX.writeFile(wb, `Bodega_Central_Pendiente_${(obra?.nombre||'obra').replace(/\s/g,'_')}_${fecha.toISOString().slice(0,10)}.xlsx`);
+    showToast('✅ Excel generado');
+  },100);
+}
+
+function generarPDFEntradas(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa.');
+  let obra = getObraActiva();
+  let f = PAG.entries.filter;
+  let base = DB.entries.filter(e=>e.obraId===DB.obraActivaId);
+  let data = f ? base.filter(e=>{ let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.guide.toLowerCase().includes(f)||(e.receiver||'').toLowerCase().includes(f)||(e.receiverName||'').toLowerCase().includes(f); }) : base;
+  if(data.length===0) return showToast('✅ No hay entradas para descargar');
+  let ordenadas = [...data].sort((a,b)=> new Date(b.date) - new Date(a.date));
+  showToast('Generando PDF...');
+  setTimeout(()=>{
+    let {jsPDF} = window.jspdf;
+    let doc = new jsPDF({format:'letter', unit:'mm'});
+    let pageWidth = doc.internal.pageSize.getWidth();
+    let fecha = new Date();
+    let fechaStr = fecha.toLocaleString('es-CL');
+
+    doc.setFillColor(37,99,235);
+    doc.rect(0,0,pageWidth,36,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16);
+    doc.text('Registro de Entradas', 14, 16);
+    doc.setFontSize(11);
+    doc.text(obra?.nombre || '—', 14, 26);
+    doc.setTextColor(0,0,0);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${fechaStr}`, pageWidth-14, 43, {align:'right'});
+    doc.setFontSize(10);
+    doc.setTextColor(100,116,139);
+    doc.text(`${ordenadas.length} entrada(s) registrada(s).`, 14, 43);
+
+    doc.autoTable({
+      startY: 49,
+      head: [['Fecha','Código','Material','Cant.','N° Guía','Nombre','Cargo','Pendiente Bod. Central']],
+      body: ordenadas.map(e=>{ let m=DB.materials.find(x=>x.id===e.materialId); let pend=m?pendienteBodegaCentralPorCodigo(obra.id, m.code):0; return [e.date, m?.code||'?', m?.name||'?', `${e.quantity} ${m?.unit||''}`, e.guide, e.receiverName||'', e.receiver||'', pend>0.0001?`${pend} ${m?.unit||''}`:'—']; }),
+      theme: 'grid',
+      headStyles: {fillColor:[16,185,129], textColor:255, fontStyle:'bold', fontSize:9},
+      alternateRowStyles: {fillColor:[248,250,252]},
+      styles: {fontSize:8, cellPadding:2.5, lineColor:[226,232,240], lineWidth:0.1},
+      columnStyles: { 7: {fontStyle:'bold', textColor:[239,68,68]} },
+      margin: {left:14, right:14}
+    });
+    _pdfPiePagina(doc, pageWidth);
+    doc.save(`Entradas_${(obra?.nombre||'obra').replace(/\s/g,'_')}_${fecha.toISOString().slice(0,10)}.pdf`);
+    showToast('✅ PDF generado');
+  },100);
+}
+
+function generarPDFSalidas(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa.');
+  let obra = getObraActiva();
+  let f = PAG.exits.filter;
+  let base = DB.exits.filter(e=>e.obraId===DB.obraActivaId);
+  let data = f ? base.filter(e=>{ let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f); }) : base;
+  if(data.length===0) return showToast('✅ No hay salidas para descargar');
+  let ordenadas = [...data].sort((a,b)=> new Date(b.date) - new Date(a.date));
+  showToast('Generando PDF...');
+  setTimeout(()=>{
+    let {jsPDF} = window.jspdf;
+    let doc = new jsPDF({format:'letter', unit:'mm'});
+    let pageWidth = doc.internal.pageSize.getWidth();
+    let fecha = new Date();
+    let fechaStr = fecha.toLocaleString('es-CL');
+
+    doc.setFillColor(37,99,235);
+    doc.rect(0,0,pageWidth,36,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16);
+    doc.text('Registro de Salidas', 14, 16);
+    doc.setFontSize(11);
+    doc.text(obra?.nombre || '—', 14, 26);
+    doc.setTextColor(0,0,0);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${fechaStr}`, pageWidth-14, 43, {align:'right'});
+    doc.setFontSize(10);
+    doc.setTextColor(100,116,139);
+    doc.text(`${ordenadas.length} salida(s) registrada(s).`, 14, 43);
+
+    doc.autoTable({
+      startY: 49,
+      head: [['Fecha','Código','Material','Cant.','N° O.T.','Especialidad','Solicitante']],
+      body: ordenadas.map(e=>{ let m=DB.materials.find(x=>x.id===e.materialId); return [e.date, m?.code||'?', m?.name||'?', `${e.quantity} ${m?.unit||''}`, e.ot, e.specialty, e.requester]; }),
+      theme: 'grid',
+      headStyles: {fillColor:[239,68,68], textColor:255, fontStyle:'bold', fontSize:9},
+      alternateRowStyles: {fillColor:[248,250,252]},
+      styles: {fontSize:8, cellPadding:2.5, lineColor:[226,232,240], lineWidth:0.1},
+      margin: {left:14, right:14}
+    });
+    _pdfPiePagina(doc, pageWidth);
+    doc.save(`Salidas_${(obra?.nombre||'obra').replace(/\s/g,'_')}_${fecha.toISOString().slice(0,10)}.pdf`);
+    showToast('✅ PDF generado');
+  },100);
+}
+
+function generatePDF(){
+  if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea o selecciona una obra primero.');
+  showToast('Generando PDF...');
+  setTimeout(()=>{
+    let d = getReporteData();
+    let {jsPDF} = window.jspdf;
+    let doc = new jsPDF();
+    let pageWidth = doc.internal.pageSize.getWidth();
+    let fechaStr = d.fecha.toLocaleString('es-CL');
+
+    // ---- Portada ----
+    doc.setFillColor(37,99,235);
+    doc.rect(0,0,pageWidth,38,'F');
+    if(d.logo){ try{ doc.addImage(d.logo,'PNG',14,8,22,22); }catch(e){} }
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(18);
+    doc.text('Reporte de Inventario de Obra', d.logo?42:14, 18);
+    doc.setFontSize(11);
+    doc.text(d.nombreObra, d.logo?42:14, 27);
+    doc.setTextColor(0,0,0);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${fechaStr}`, pageWidth-14, 45, {align:'right'});
+    if(d.tagObra){ doc.setFontSize(10); doc.text(d.tagObra, 14, 47); }
+
+    let y = 56;
+    doc.setFontSize(13);
+    doc.text('Resumen Ejecutivo', 14, y); y += 8;
+    doc.autoTable({
+      startY: y,
+      theme: 'grid',
+      head: [['Indicador','Valor']],
+      body: [
+        ['Total materiales en catálogo', String(d.stockRows.length)],
+        ['Materiales en estado crítico', String(d.critCount)],
+        ['Materiales en precaución', String(d.warnCount)],
+        ['Total entradas registradas', String(d.entradasRows.length)],
+        ['Total salidas registradas', String(d.salidasRows.length)]
+      ],
+      headStyles: {fillColor:[37,99,235]},
+      margin: {left:14, right:14},
+      tableWidth: pageWidth-28
+    });
+
+    // ---- Sección Stock ----
+    doc.addPage();
+    doc.setFontSize(14); doc.text('Stock Actual', 14, 18);
+    doc.autoTable({
+      startY: 24,
+      head: [['Código','Material','Categoría','Unidad','Stock','Mínimo','Estado']],
+      body: d.stockRows.map(r=>[r.code,r.name,r.category,r.unit,r.stock,r.min,r.estado]),
+      theme: 'grid', headStyles:{fillColor:[37,99,235]}, styles:{fontSize:8}
+    });
+
+    // ---- Sección Entradas (solo si hay datos) ----
+    if(d.entradasRows.length){
+      doc.addPage();
+      doc.setFontSize(14); doc.text('Entradas Registradas', 14, 18);
+      doc.autoTable({
+        startY: 24,
+        head: [['Fecha','Código','Material','Cant.','Guía','Nombre','Cargo']],
+        body: d.entradasRows.map(r=>[r.date,r.code,r.name,r.qty,r.guide,r.receiverName||'',r.receiver]),
+        theme: 'grid', headStyles:{fillColor:[16,185,129]}, styles:{fontSize:8}
+      });
+    }
+
+    // ---- Sección Salidas (solo si hay datos) ----
+    if(d.salidasRows.length){
+      doc.addPage();
+      doc.setFontSize(14); doc.text('Salidas Registradas', 14, 18);
+      doc.autoTable({
+        startY: 24,
+        head: [['Fecha','Código','Material','Cant.','N° O.T.','Especialidad','Solicitante']],
+        body: d.salidasRows.map(r=>[r.date,r.code,r.name,r.qty,r.ot,r.specialty,r.requester]),
+        theme: 'grid', headStyles:{fillColor:[239,68,68]}, styles:{fontSize:8}
+      });
+    }
+
+    doc.save(`Reporte_${d.nombreObra.replace(/\s/g,'_')}_${d.fecha.toISOString().slice(0,10)}.pdf`);
+    showToast('✅ PDF generado');
+  },100);
+}
+
+function showToast(msg){
+  var colors={success:"#059669",error:"#dc2626",warning:"#d97706",info:"#2563eb"};
+  var type="info";
+  if(msg.indexOf("✅")>=0||/agregado|guardado|registrad|actualizado|corregid|cerrada|correcto/i.test(msg)) type="success";
+  else if(msg.indexOf("❌")>=0||/error|negativo|insuficiente|duplicado/i.test(msg)) type="error";
+  else if(msg.indexOf("⚠")>=0) type="warning";
+  var t=document.getElementById("toast");
+  if(!t) return;
+  t.innerText=msg;
+  t.style.background=colors[type];
+  t.style.display="block";
+  if(t._timer) clearTimeout(t._timer);
+  t._timer=setTimeout(function(){ t.style.display="none"; },3200);
+}
+function updateBackupCircle(){ let circle=document.getElementById('backupStatusCircle'); if(!circle) return; let last=DB.config.lastBackupDate?new Date(DB.config.lastBackupDate):null; if(!last){ circle.className='status-circle red'; circle.title='Sin backups'; return; } let diff=Math.floor((new Date()-last)/(1000*60*60*24)); let color='green',msg=`Último: ${last.toLocaleDateString()}`; if(diff>=5){color='red'; msg+=' (respaldar ya!)';} else if(diff>=3){color='orange';} else if(diff>=1){color='yellow';} else msg+=' (hoy)'; circle.className=`status-circle ${color}`; circle.title=msg; }
+function showBackupInfo(){ let last=DB.config.lastBackupDate?new Date(DB.config.lastBackupDate):null; if(!last) showToast("No hay backup en carpeta."); else showToast(`Último backup: ${last.toLocaleDateString()}`); }
+function openModal(id){ document.getElementById(id).classList.add('active'); populateDropdowns(); }
+function closeModal(id){ document.getElementById(id).classList.remove('active'); document.querySelector(`#${id} form`)?.reset(); document.querySelectorAll('.smart-dropdown').forEach(d=>d.classList.remove('show')); document.querySelectorAll('.selected-display').forEach(d=>d.innerText='Ninguno seleccionado'); }
+async function saveEntry(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('entryMaterialId').value, qty=parseInt(document.getElementById('entryQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); addStock(matId,qty); let archivoSel=document.getElementById('entryArchivoSelect'); DB.entries.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, guide:document.getElementById('entryGuide').value, date:document.getElementById('entryDate').value, receiver:document.getElementById('entryReceiver').value, receiverName:document.getElementById('entryReceiverName').value.trim(), observaciones:document.getElementById('entryObservaciones').value.trim(), guiaArchivoId: archivoSel&&archivoSel.value?archivoSel.value:null });
+  saveToStorage(); closeModal('entryModal'); showToast('✅ Entrada registrada'); }
+function registrarEnMiObra(code, name, unit, cantidadSugerida){
+  let codeNorm = normalizarCodigo(code);
+  let mat = DB.materials.find(m=>normalizarCodigo(m.code)===codeNorm);
+  if(!mat){ showToast('⚠️ Primero agrega este código a tu catálogo (ve a "❓ Códigos sin Catalogar")'); return; }
+  openModal('entryModal');
+  document.getElementById('entryMaterialId').value = mat.id;
+  document.getElementById('entrySearch').value = `${mat.code} - ${mat.name}`;
+  document.getElementById('entrySelected').innerText = `${mat.code} - ${mat.name}`;
+  document.getElementById('entryQty').value = Math.max(1, Math.round(cantidadSugerida));
+  showToast('📦 Ajusta la cantidad real, completa nombre y cargo, y guarda');
+}
+function saveExit(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('exitMaterialId').value, qty=parseInt(document.getElementById('exitQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); if(getStock(matId)<qty) return showToast('❌ Stock insuficiente'); addStock(matId,-qty); DB.exits.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, ot:document.getElementById('exitOT').value, date:document.getElementById('exitDate').value, specialty:document.getElementById('exitSpecialty').value, requester:document.getElementById('exitRequester').value, observaciones:document.getElementById('exitObservaciones').value.trim() }); saveToStorage(); closeModal('exitModal'); showToast('✅ Salida registrada'); }
+function toggleTheme(){ let next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; document.documentElement.setAttribute('data-theme',next); DB.config.theme=next; saveToStorage(); }
+function applyRoleAccess(){ document.querySelectorAll('.admin-sup-only').forEach(el=>{ if(currentUser.role==='bodega') el.classList.add('hidden'); }); }
+function setupTabs(){ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',function(e){ let t=this.dataset.tab; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); this.classList.add('active'); document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden')); document.getElementById(`tab-${t}`).classList.remove('hidden'); if(['inventario','catalogo','entradas','salidas'].includes(t)){ let pk=t==='catalogo'?'catalog':t==='inventario'?'inventory':t==='entradas'?'entries':'exits'; PAG[pk].page=1; PAG[pk].filter=''; let inp=document.getElementById(t==='catalogo'?'searchCatalog':t==='inventario'?'searchInventory':t==='entradas'?'searchEntries':'searchExits'); if(inp) inp.value=''; if(pk==='catalog') renderCatalog(); else if(pk==='inventory') renderInventory(); else if(pk==='entries') renderEntries(); else if(pk==='exits') renderExits(); } populateDropdowns(); })); }
+function updateBrand(){ let obra=getObraActiva(); let nombre=obra?obra.nombre:DB.config.projectName; let tag=obra?(obra.tag||''):DB.config.projectTag; let logo=obra?obra.logo:DB.config.logo; document.getElementById('headerProjectName').innerText=nombre; document.getElementById('headerProjectTag').innerText=tag; let img=document.getElementById('headerLogo'); if(logo){ img.src=logo; img.classList.remove('hidden'); }else img.classList.add('hidden'); document.getElementById('configProjectName').value=nombre; document.getElementById('configProjectTag').value=tag; }
+function saveProjectConfig(){ let f=document.getElementById('configLogo').files[0]; let obra=getObraActiva(); if(!obra) return showToast('❌ No hay obra activa'); let save=(logo=obra.logo)=>{ obra.nombre=document.getElementById('configProjectName').value.trim()||'Inventario de Faena'; obra.tag=document.getElementById('configProjectTag').value.trim()||''; obra.logo=logo; saveToStorage(); renderObraSelectors(); showToast('✅ Identidad guardada'); }; if(f){ if(f.size>500000) return showToast('⚠️ Imagen >500KB'); let r=new FileReader(); r.onload=e=>save(e.target.result); r.readAsDataURL(f); } else save(); }
+function loadFromStorage(){ let saved=localStorage.getItem('faena_inventory_v2'); if(saved) try{ let p=JSON.parse(saved); Object.keys(p).forEach(k=>{ if(DB.hasOwnProperty(k)) DB[k]=p[k]; }); }catch(e){} if(DB.materials.length===0 && DB.obras.length===0){ DB.materials=[{id:'m1',code:'HVAC-01',name:'Cable THHN 12AWG',category:'Eléctrico',unit:'mt',min:100},{id:'m2',code:'DUCT-02',name:'Ducto Galv 1/2"',category:'Perfiles de Fe',unit:'m2',min:10}]; } migrateToMultiObra(); migrateExcelIntegration(); persistData(); cleanOrphanedRecords(true); updateBackupCircle(); }
+function runSplash(){ let bar=document.getElementById('splashProgress'), w=0; let int=setInterval(()=>{ w+=Math.random()*25; if(w>100) w=100; bar.style.width=w+'%'; document.getElementById('splashStatus').innerText=w<100?'Preparando auto-backup...':'Listo.'; if(w>=100){ clearInterval(int); setTimeout(()=>{ document.getElementById('splashScreen').style.display='none'; document.getElementById('loginScreen').style.display='flex'; },400); } },200); }
+async function handleLogin(e){ e.preventDefault(); let u=document.getElementById('loginUser').value, p=document.getElementById('loginPass').value; let user=DB.users.find(x=>x.user===u&&x.pass===p); if(!user){ document.getElementById('loginError').style.display='block'; return; } currentUser=user; document.getElementById('loginScreen').style.display='none'; document.getElementById('appContainer').style.display='flex'; document.getElementById('userNameDisplay').innerText=`${user.name} (${user.role})`; applyRoleAccess(); populateDropdowns(); updateBrand(); await loadArchivosFromStorage(); await loadExcelSeguimientoFromStorage(); await initFolderSync(); if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} } if(autoSaveInterval) clearInterval(autoSaveInterval); autoSaveInterval=setInterval(()=>persistData(),1500); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); folderAutoSaveInterval=setInterval(()=>{ if(folderHandle) saveCurrentToFolder(folderHandle,true); },60000); renderAll(); updateStorageBar(); updateBackupCircle(); revisarExcelActualizado(false).catch(()=>{}); }
+async function logout(){ if(autoSaveInterval) clearInterval(autoSaveInterval); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); if(folderHandle) await saveCurrentToFolder(folderHandle,true); currentUser=null; document.getElementById('appContainer').style.display='none'; document.getElementById('loginScreen').style.display='flex'; document.getElementById('loginForm').reset(); showToast('✅ Sesión cerrada. Backup guardado.'); }
+function init(){ runSplash(); loadFromStorage(); setupTabs(); document.getElementById('loginForm').addEventListener('submit',handleLogin); document.querySelectorAll('input[type="date"]').forEach(i=>i.valueAsDate=new Date()); document.documentElement.setAttribute('data-theme',DB.config.theme); document.addEventListener('click',e=>{ if(!e.target.closest('.smart-search')) document.querySelectorAll('.smart-dropdown').forEach(d=>d.classList.remove('show')); }); window.addEventListener('beforeunload',()=>{ if(currentUser) persistData(); }); }
+init();
+</script>
+</body>
+</html>
