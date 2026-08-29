@@ -368,9 +368,9 @@
         <div class="nav-item" data-tab="salidas">Salidas</div>
         <div class="nav-item" data-tab="archivos">Archivos (Guías)</div>
         <div class="nav-item" data-tab="reportes">Reportes</div>
-        <div class="nav-item admin-sup-only" data-tab="seguimiento">Seguimiento Excel</div>
+        <div class="nav-item" data-tab="seguimiento">Seguimiento Excel</div>
         <div class="nav-item" data-tab="instrucciones">Instrucciones</div>
-        <div class="nav-item admin-sup-only" data-tab="config">Configuración</div>
+        <div class="nav-item" data-tab="config">Configuración</div>
       </nav>
       <div class="user-bar"><div id="userNameDisplay">Usuario</div><button class="btn btn-outline btn-sm" style="margin-top:0.5rem;" onclick="logout()">🚪 Cerrar Sesión</button></div>
     </aside>
@@ -637,7 +637,7 @@
                 <div><label>Clave inicial</label><input type="text" id="newUserPass" placeholder="Clave"></div>
               </div>
               <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:1.2rem;" onclick="agregarUsuario()">➕ Agregar Usuario</button>
-              <table style="width:100%;"><thead><tr><th>Usuario</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
+              <table style="width:100%;"><thead><tr><th>Usuario</th><th>Nombre</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
             </div>
           </details>
         </div>
@@ -1842,8 +1842,24 @@ function renderEntries(){ let f=PAG.entries.filter; let base=DB.entries.filter(e
 function renderExits(){ let f=PAG.exits.filter; let base=DB.exits.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f);}):base; let page=data.slice((PAG.exits.page-1)*PAG.perPage, PAG.exits.page*PAG.perPage); document.getElementById('exitsTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let puntoObs=e.observaciones?`<span onclick="verObservacionSalida('${e.id}')" title="Ver observación" style="display:inline-block;width:8px;height:8px;background:var(--danger);border-radius:50%;cursor:pointer;margin-left:6px;vertical-align:middle;"></span>`:''; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}${puntoObs}</td><td style="white-space:nowrap; color:var(--danger); font-weight:600;">-${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.ot||'').replace(/"/g,'&quot;')}">${e.ot}</td><td style="white-space:nowrap;">${e.specialty}</td><td style="white-space:nowrap;" title="${(e.requester||'').replace(/"/g,'&quot;')}">${e.requester}</td><td style="white-space:nowrap;">${puedeTrabajarEn('salidas')?`<button class="btn btn-outline btn-sm" onclick="openEditExit('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteExit('${e.id}')">🗑️</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationExits',data.length,PAG.exits.page,'exits'); }
 function verObservacionEntrada(id){ let e=DB.entries.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
 function verObservacionSalida(id){ let e=DB.exits.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
-function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>{ let filaClave=u.role==='admin'?`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button></td></tr>`:`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarUsuario('${u.user}')">🗑️</button></td></tr>`; if(u.role==='admin') return filaClave; let permisos=Array.isArray(u.modulosPermitidos)?u.modulosPermitidos:[]; let casilleros=MODULOS_CON_TRABAJO.map(m=>`<label style="display:inline-flex;align-items:center;gap:0.3rem;margin-right:0.9rem;font-size:0.8rem;font-weight:400;"><input type="checkbox" ${permisos.includes(m.key)?'checked':''} onchange="toggleModuloPermitido('${u.user}','${m.key}',this.checked)"> ${m.label}</label>`).join(''); let filaPermisos=`<tr><td colspan="3" style="padding:0.2rem 0 0.9rem;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Puede trabajar (agregar/editar/borrar) en:</div>${casilleros}</td></tr>`; return filaClave+filaPermisos; }).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
-function updatePass(k){ let v=document.getElementById(`pass-${k}`).value.trim(); if(!v) return showToast('Escribe una clave'); DB.users.find(x=>x.user===k).pass=v; saveToStorage(); showToast('Clave actualizada'); }
+function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>{ let filaClave=u.role==='admin'?`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave (opcional)"></td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button></td></tr>`:`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave (opcional)"></td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarUsuario('${u.user}')">🗑️</button></td></tr>`; if(u.role==='admin') return filaClave; let permisos=Array.isArray(u.modulosPermitidos)?u.modulosPermitidos:[]; let casilla=(m)=>`<label style="display:inline-flex;align-items:center;gap:0.3rem;margin-right:0.9rem;font-size:0.8rem;font-weight:400;"><input type="checkbox" ${permisos.includes(m.key)?'checked':''} onchange="toggleModuloPermitido('${u.user}','${m.key}',this.checked)"> ${m.label}</label>`; let casillerosTrabajo=MODULOS_TRABAJO.map(casilla).join(''); let casillerosAcceso=MODULOS_ACCESO.map(casilla).join(''); let filaPermisos=`<tr><td colspan="4" style="padding:0.2rem 0 0.9rem;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Puede trabajar (agregar/editar/borrar) en:</div>${casillerosTrabajo}<div style="font-size:0.75rem;color:var(--text-muted);margin:0.6rem 0 0.35rem;">Acceso completo a (si no se marca, ni siquiera puede entrar a mirar):</div>${casillerosAcceso}</td></tr>`; return filaClave+filaPermisos; }).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
+function guardarUsuario(k){
+  let u = DB.users.find(x=>x.user===k);
+  if(!u) return;
+  let nombreInput = document.getElementById(`name-${k}`);
+  let passInput = document.getElementById(`pass-${k}`);
+  let nuevoNombre = nombreInput ? nombreInput.value.trim() : '';
+  let nuevaClave = passInput ? passInput.value.trim() : '';
+  if(!nuevoNombre) return showToast('❌ El nombre no puede quedar vacío');
+  let cambios = [];
+  if(nuevoNombre !== u.name){ u.name = nuevoNombre; cambios.push('nombre'); }
+  if(nuevaClave){ u.pass = nuevaClave; cambios.push('clave'); }
+  if(cambios.length===0) return showToast('No hay cambios que guardar');
+  saveToStorage();
+  if(currentUser && currentUser.user===k){ currentUser.name = u.name; let disp=document.getElementById('userNameDisplay'); if(disp) disp.innerText=`${u.name} (${u.role})`; }
+  if(passInput) passInput.value='';
+  showToast(`✅ Usuario "${k}" actualizado (${cambios.join(' y ')})`);
+}
 function toggleModuloPermitido(userKey, modulo, activo){
   let u = DB.users.find(x=>x.user===userKey);
   if(!u) return;
@@ -2470,15 +2486,22 @@ function registrarEnMiObra(code, name, unit, cantidadSugerida){
 }
 function saveExit(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('exitMaterialId').value, qty=parseInt(document.getElementById('exitQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); if(getStock(matId)<qty) return showToast('❌ Stock insuficiente'); addStock(matId,-qty); DB.exits.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, ot:document.getElementById('exitOT').value, date:document.getElementById('exitDate').value, specialty:document.getElementById('exitSpecialty').value, requester:document.getElementById('exitRequester').value, observaciones:document.getElementById('exitObservaciones').value.trim() }); saveToStorage(); closeModal('exitModal'); showToast('✅ Salida registrada'); }
 function toggleTheme(){ let next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; document.documentElement.setAttribute('data-theme',next); DB.config.theme=next; saveToStorage(); }
-// Módulos que quedan ocultos por completo salvo para Admin (Configuración, Seguimiento Excel).
-const MODULOS_SOLO_ADMIN = ['config','seguimiento'];
-// Módulos que todos ven siempre, pero cuyo botón de agregar/editar/borrar depende del permiso
-// que Admin le haya marcado a ese usuario en Configuración.
-const MODULOS_CON_TRABAJO = [
+// Módulos que TODOS ven siempre (la pestaña nunca se esconde), pero cuyo botón de
+// agregar/editar/borrar depende del permiso marcado en Configuración. Sin el permiso: se ve
+// todo el contenido, solo de lectura.
+const MODULOS_TRABAJO = [
   {key:'catalogo', label:'Catálogo'},
   {key:'entradas', label:'Entradas'},
   {key:'salidas', label:'Salidas'},
   {key:'archivos', label:'Archivos'}
+];
+// Módulos de "todo o nada": si el usuario no tiene el permiso marcado, la pestaña queda
+// oculta por completo — ni siquiera puede entrar a mirar. Admin los tiene siempre, para el
+// resto se decide por usuario en Configuración (por ejemplo, para dejarle acceso completo a
+// alguien de confianza mientras el administrador está ausente).
+const MODULOS_ACCESO = [
+  {key:'seguimiento', label:'Seguimiento Excel'},
+  {key:'config', label:'Configuración'}
 ];
 function puedeTrabajarEn(modulo){
   if(!currentUser) return false;
@@ -2487,7 +2510,8 @@ function puedeTrabajarEn(modulo){
 }
 function applyRoleAccess(){
   if(!currentUser) return;
-  document.querySelectorAll('.admin-sup-only').forEach(el=>{ el.classList.toggle('hidden', currentUser.role!=='admin'); });
+  const setNavVisible = (tab, visible) => { let el=document.querySelector(`.nav-item[data-tab="${tab}"]`); if(el) el.classList.toggle('hidden', !visible); };
+  MODULOS_ACCESO.forEach(m=> setNavVisible(m.key, puedeTrabajarEn(m.key)));
   const setVisible = (id, visible) => { let el=document.getElementById(id); if(el) el.classList.toggle('hidden', !visible); };
   setVisible('materialForm', puedeTrabajarEn('catalogo'));
   setVisible('btnNuevaEntrada', puedeTrabajarEn('entradas'));
@@ -2496,7 +2520,7 @@ function applyRoleAccess(){
   setVisible('btnLimpiarSalidas', puedeTrabajarEn('salidas'));
   setVisible('archivosUploadZone', puedeTrabajarEn('archivos'));
 }
-function setupTabs(){ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',function(e){ let t=this.dataset.tab; if(MODULOS_SOLO_ADMIN.includes(t) && (!currentUser || currentUser.role!=='admin')) return; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); this.classList.add('active'); document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden')); document.getElementById(`tab-${t}`).classList.remove('hidden'); if(['inventario','catalogo','entradas','salidas'].includes(t)){ let pk=t==='catalogo'?'catalog':t==='inventario'?'inventory':t==='entradas'?'entries':'exits'; PAG[pk].page=1; PAG[pk].filter=''; let inp=document.getElementById(t==='catalogo'?'searchCatalog':t==='inventario'?'searchInventory':t==='entradas'?'searchEntries':'searchExits'); if(inp) inp.value=''; if(pk==='catalog') renderCatalog(); else if(pk==='inventory') renderInventory(); else if(pk==='entries') renderEntries(); else if(pk==='exits') renderExits(); } populateDropdowns(); })); }
+function setupTabs(){ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',function(e){ let t=this.dataset.tab; if(MODULOS_ACCESO.some(m=>m.key===t) && !puedeTrabajarEn(t)) return; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); this.classList.add('active'); document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden')); document.getElementById(`tab-${t}`).classList.remove('hidden'); if(['inventario','catalogo','entradas','salidas'].includes(t)){ let pk=t==='catalogo'?'catalog':t==='inventario'?'inventory':t==='entradas'?'entries':'exits'; PAG[pk].page=1; PAG[pk].filter=''; let inp=document.getElementById(t==='catalogo'?'searchCatalog':t==='inventario'?'searchInventory':t==='entradas'?'searchEntries':'searchExits'); if(inp) inp.value=''; if(pk==='catalog') renderCatalog(); else if(pk==='inventory') renderInventory(); else if(pk==='entries') renderEntries(); else if(pk==='exits') renderExits(); } populateDropdowns(); })); }
 function updateBrand(){ let obra=getObraActiva(); let nombre=obra?obra.nombre:DB.config.projectName; let tag=obra?(obra.tag||''):DB.config.projectTag; let logo=obra?obra.logo:DB.config.logo; document.getElementById('headerProjectName').innerText=nombre; document.getElementById('headerProjectTag').innerText=tag; let img=document.getElementById('headerLogo'); if(logo){ img.src=logo; img.classList.remove('hidden'); }else img.classList.add('hidden'); document.getElementById('configProjectName').value=nombre; document.getElementById('configProjectTag').value=tag; }
 function saveProjectConfig(){ let f=document.getElementById('configLogo').files[0]; let obra=getObraActiva(); if(!obra) return showToast('❌ No hay obra activa'); let save=(logo=obra.logo)=>{ obra.nombre=document.getElementById('configProjectName').value.trim()||'Inventario de Faena'; obra.tag=document.getElementById('configProjectTag').value.trim()||''; obra.logo=logo; saveToStorage(); renderObraSelectors(); showToast('✅ Identidad guardada'); }; if(f){ if(f.size>500000) return showToast('⚠️ Imagen >500KB'); let r=new FileReader(); r.onload=e=>save(e.target.result); r.readAsDataURL(f); } else save(); }
 function loadFromStorage(){ let saved=localStorage.getItem('faena_inventory_v2'); if(saved) try{ let p=JSON.parse(saved); Object.keys(p).forEach(k=>{ if(DB.hasOwnProperty(k)) DB[k]=p[k]; }); }catch(e){} if(DB.materials.length===0 && DB.obras.length===0){ DB.materials=[{id:'m1',code:'HVAC-01',name:'Cable THHN 12AWG',category:'Eléctrico',unit:'mt',min:100},{id:'m2',code:'DUCT-02',name:'Ducto Galv 1/2"',category:'Perfiles de Fe',unit:'m2',min:10}]; } migrateToMultiObra(); migrateExcelIntegration(); migrateModulosPermitidos(); persistData(); cleanOrphanedRecords(true); updateBackupCircle(); }
