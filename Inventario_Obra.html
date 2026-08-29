@@ -368,7 +368,7 @@
         <div class="nav-item" data-tab="salidas">Salidas</div>
         <div class="nav-item" data-tab="archivos">Archivos (Guías)</div>
         <div class="nav-item" data-tab="reportes">Reportes</div>
-        <div class="nav-item" data-tab="seguimiento">Seguimiento Excel</div>
+        <div class="nav-item admin-sup-only" data-tab="seguimiento">Seguimiento Excel</div>
         <div class="nav-item" data-tab="instrucciones">Instrucciones</div>
         <div class="nav-item admin-sup-only" data-tab="config">Configuración</div>
       </nav>
@@ -463,9 +463,9 @@
         <div class="page-header">
           <h1>Registro de Entradas</h1>
           <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-primary btn-sm" onclick="openModal('entryModal')">📥 Nueva Entrada</button>
+            <button id="btnNuevaEntrada" class="btn btn-primary btn-sm" onclick="openModal('entryModal')">📥 Nueva Entrada</button>
             <button class="btn btn-outline btn-sm" onclick="generarPDFEntradas()">🖨️ Descargar PDF</button>
-            <button class="btn btn-danger btn-sm" onclick="clearAllEntries()">🗑️ Limpiar todo</button>
+            <button id="btnLimpiarEntradas" class="btn btn-danger btn-sm" onclick="clearAllEntries()">🗑️ Limpiar todo</button>
           </div>
         </div>
         <div class="table-container">
@@ -482,9 +482,9 @@
         <div class="page-header">
           <h1>Registro de Salidas</h1>
           <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-outline btn-sm" onclick="openModal('exitModal')">📤 Nueva Salida</button>
+            <button id="btnNuevaSalida" class="btn btn-outline btn-sm" onclick="openModal('exitModal')">📤 Nueva Salida</button>
             <button class="btn btn-outline btn-sm" onclick="generarPDFSalidas()">🖨️ Descargar PDF</button>
-            <button class="btn btn-danger btn-sm" onclick="clearAllExits()">🗑️ Limpiar todo</button>
+            <button id="btnLimpiarSalidas" class="btn btn-danger btn-sm" onclick="clearAllExits()">🗑️ Limpiar todo</button>
           </div>
         </div>
         <div class="table-container">
@@ -520,7 +520,7 @@
           <div style="font-size:0.65rem; color:var(--text-muted); margin-top:0.3rem;">📌 Cuota real de este navegador en este equipo (depende de tu disco libre).</div>
         </div>
         </div>
-        <label class="upload-zone">
+        <label id="archivosUploadZone" class="upload-zone">
           <div class="uz-icon">📤</div>
           <div class="uz-title">Subir guía (foto o PDF)</div>
           <div class="uz-sub">Las fotos se comprimen siempre. Los PDF de hasta 5 MB se guardan tal cual (con su texto seleccionable intacto); solo los más pesados se comprimen. Puedes seleccionar varias a la vez.</div>
@@ -630,6 +630,13 @@
           <details class="config-acc">
             <summary>Usuarios <span class="acc-sub" id="cfgUsersCount"></span><span class="chev">▶</span></summary>
             <div class="config-acc-body">
+              <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:0.5rem; align-items:end; margin-bottom:1rem;">
+                <div><label>Usuario (login)</label><input type="text" id="newUserLogin" placeholder="ej: prevencionista"></div>
+                <div><label>Nombre</label><input type="text" id="newUserName" placeholder="ej: Juan Pérez"></div>
+                <div><label>Cargo</label><input type="text" id="newUserRole" placeholder="ej: Prevencionista"></div>
+                <div><label>Clave inicial</label><input type="text" id="newUserPass" placeholder="Clave"></div>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:1.2rem;" onclick="agregarUsuario()">➕ Agregar Usuario</button>
               <table style="width:100%;"><thead><tr><th>Usuario</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
             </div>
           </details>
@@ -892,7 +899,7 @@
 // ======================== CONFIGURACIÓN ========================
 const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024; // 5 MB: límite estándar real de localStorage en Edge/Chrome
 const DB = {
-  users: [{user:'admin',pass:'admin',name:'Administrador',role:'admin'},{user:'supervisor',pass:'supervisor',name:'Supervisor Obra',role:'supervisor'},{user:'bodega',pass:'bodega',name:'Bodeguero',role:'bodega'}],
+  users: [{user:'admin',pass:'admin',name:'Administrador',role:'admin'},{user:'supervisor',pass:'supervisor',name:'Supervisor Obra',role:'supervisor',modulosPermitidos:['entradas','salidas']},{user:'bodega',pass:'bodega',name:'Bodeguero',role:'bodega',modulosPermitidos:['entradas','salidas']}],
   obras: [], obraActivaId: null, stockPorObra: {},
   materials: [], entries: [], exits: [],
   receivers: ['Supervisor de Terreno','Bodeguero','Otros'],
@@ -905,6 +912,12 @@ const DB = {
 };
 let currentUser = null, folderHandle = null, searchTimeout, autoSaveInterval, folderAutoSaveInterval;
 let excelFileHandle = null;
+// Último "estado conocido en sincronía" entre esta sesión y el archivo de la carpeta — se usa para
+// que el guardado y el refresco automático sepan qué partes de los datos modificó DE VERDAD esta
+// sesión (y por lo tanto deben escribirse), y cuáles hay que dejar tal como estén en el archivo
+// (por si otra persona las cambió mientras tanto). null = todavía no hay una base de comparación.
+let ultimoSnapshotSincronizado = null;
+let folderRefreshInterval = null;
 const PAG = { perPage:25, catalog:{page:1,filter:''}, inventory:{page:1,filter:''}, entries:{page:1,filter:''}, exits:{page:1,filter:''} };
 
 // ======================== MULTI-OBRA: helpers de stock aislado ========================
@@ -951,6 +964,14 @@ function migrateExcelIntegration() {
     delete bucket.entradasReferencia;
     delete bucket.salidasReferencia;
     if(!bucket.entradasSalidasPorCodigo) bucket.entradasSalidasPorCodigo = [];
+  });
+}
+// Le da a Supervisor y Bodeguero un valor por defecto de permisos por módulo si el backup cargado
+// es de antes de que existiera esta función (así nadie queda sin poder trabajar por accidente al
+// abrir un respaldo viejo). Admin no se toca — siempre tiene acceso total.
+function migrateModulosPermitidos() {
+  DB.users.forEach(u => {
+    if(u.role !== 'admin' && !Array.isArray(u.modulosPermitidos)) u.modulosPermitidos = ['entradas','salidas'];
   });
 }
 function ensureExcelImportBucket(obraId) {
@@ -1294,7 +1315,7 @@ function renderArchivos() {
   grid.innerHTML = lista.map(a => `<div class="archivo-card">
       <div class="archivo-thumb" onclick="verArchivo('${a.id}')">${a.tipo === 'image' ? `<img src="${a.data}" alt="${a.nombre}">` : '📄'}</div>
       <div class="archivo-info"><div class="archivo-name" title="${a.nombre}">${a.nombre}</div><div class="archivo-meta">${new Date(a.fecha).toLocaleDateString()} · ${formatBytes(a.size)}</div></div>
-      <div class="archivo-actions"><button class="btn btn-outline btn-sm" onclick="verArchivo('${a.id}')">👁️ Ver</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarArchivo('${a.id}')">🗑️</button></div>
+      <div class="archivo-actions"><button class="btn btn-outline btn-sm" onclick="verArchivo('${a.id}')">👁️ Ver</button> ${puedeTrabajarEn('archivos')?`<button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarArchivo('${a.id}')">🗑️</button>`:''}</div>
     </div>`).join('') || '<div class="archivo-empty">Sin guías subidas para esta obra todavía.</div>';
 }
 
@@ -1430,10 +1451,12 @@ async function loadFromFile(fileHandle){
       if(DB.archivosGuia){ ARCHIVOS_GUIA=DB.archivosGuia; delete DB.archivosGuia; await persistArchivos(); }
       migrateToMultiObra();
       migrateExcelIntegration();
+      migrateModulosPermitidos();
       await loadExcelSeguimientoFromStorage(); // si el backup cargado trae el formato viejo, lo saca de DB y lo manda a IndexedDB
       persistData();
       renderAll();
       updateBackupCircle();
+      ultimoSnapshotSincronizado = tomarSnapshotActual(); // desde aquí, el guardado y el refresco ya pueden fusionar en vez de sobreescribir a ciegas
       return true;
     }
   } catch(e){
@@ -1441,7 +1464,81 @@ async function loadFromFile(fileHandle){
   }
   return false;
 }
-async function saveCurrentToFolder(handle,silent=false){ if(!handle) return false; try{ let fileHandle=await handle.getFileHandle('Backup_Faena_Latest.json',{create:true}); let writable=await fileHandle.createWritable(); let exportData=Object.assign({},DB,{archivosGuia:ARCHIVOS_GUIA}); await writable.write(JSON.stringify(exportData,null,2)); await writable.close(); DB.config.lastBackupDate=new Date().toISOString(); persistData(); updateBackupCircle(); if(!silent) showToast("💾 Backup guardado (archivo único)"); return true; }catch(e){ if(!silent) showToast("Error al guardar"); return false; } }
+// ======================== GUARDADO SIN PISAR CAMBIOS DE OTRA PERSONA ========================
+// Toma una "foto" (clon profundo) del estado actual completo, tal como se escribiría hoy al archivo.
+function tomarSnapshotActual(){ return JSON.parse(JSON.stringify(Object.assign({}, DB, {archivosGuia: ARCHIVOS_GUIA}))); }
+// Decide, clave por clave (materials, entries, exits, users, config, archivosGuia, etc.), si nos
+// quedamos con el dato ACTUAL de esta sesión o con el dato FRESCO recién leído del archivo:
+// - Si esta sesión cambió esa clave de verdad desde el último punto de sincronización conocido
+//   (ultimoSnapshotSincronizado), se respeta el cambio de esta sesión.
+// - Si esta sesión no la tocó, se toma tal cual del archivo fresco — así no se pisa lo que otra
+//   persona haya guardado mientras tanto en esa misma clave.
+// Sin un snapshot de referencia (primera vez que se conecta la carpeta) no hay nada que fusionar:
+// se devuelve el estado actual completo, igual que el comportamiento de siempre.
+function calcularFusion(freshData){
+  let currentData = Object.assign({}, DB, {archivosGuia: ARCHIVOS_GUIA});
+  if(!ultimoSnapshotSincronizado || !freshData || typeof freshData !== 'object') return currentData;
+  let merged = {};
+  new Set([...Object.keys(currentData), ...Object.keys(freshData)]).forEach(k=>{
+    let cambioLocal = JSON.stringify(currentData[k]) !== JSON.stringify(ultimoSnapshotSincronizado[k]);
+    merged[k] = cambioLocal ? currentData[k] : (Object.prototype.hasOwnProperty.call(freshData,k) ? freshData[k] : currentData[k]);
+  });
+  return merged;
+}
+// Aplica un objeto ya fusionado de vuelta a la memoria (DB + ARCHIVOS_GUIA), para que la pantalla
+// refleje también lo que vino del archivo (cambios de otra persona) y no solo lo propio.
+function aplicarDatosFusionados(merged){
+  let archivosFusionados = merged.archivosGuia;
+  let dbFusionado = Object.assign({}, merged);
+  delete dbFusionado.archivosGuia;
+  Object.assign(DB, dbFusionado);
+  if(archivosFusionados) ARCHIVOS_GUIA = archivosFusionados;
+}
+async function saveCurrentToFolder(handle,silent=false){
+  if(!handle) return false;
+  try{
+    let fileHandle=await handle.getFileHandle('Backup_Faena_Latest.json',{create:true});
+    let merged;
+    try{
+      let freshFile = await fileHandle.getFile();
+      let freshData = JSON.parse(await freshFile.text());
+      merged = calcularFusion(freshData);
+    }catch(e){
+      merged = Object.assign({}, DB, {archivosGuia: ARCHIVOS_GUIA}); // archivo vacío/corrupto/inexistente: guardado normal, sin fusión
+    }
+    merged.config = Object.assign({}, merged.config, { lastBackupDate: new Date().toISOString() });
+    let writable=await fileHandle.createWritable();
+    await writable.write(JSON.stringify(merged,null,2));
+    await writable.close();
+    aplicarDatosFusionados(merged);
+    ultimoSnapshotSincronizado = tomarSnapshotActual();
+    persistData();
+    renderAll();
+    updateStorageBar();
+    updateBackupCircle();
+    if(!silent) showToast("💾 Backup guardado (archivo único)");
+    return true;
+  }catch(e){ if(!silent) showToast("Error al guardar"); return false; }
+}
+// Relee el archivo desde disco y trae a la pantalla lo que haya cambiado ahí (por ejemplo, si otra
+// persona registró una salida), sin pisar lo que esta sesión tenga sin guardar todavía. No escribe
+// nada al archivo — solo actualiza lo que se ve. Se usa en el refresco automático cada 2 minutos.
+async function refrescarDesdeArchivo(){
+  if(!folderHandle) return;
+  try{
+    let latest = await getLatestBackupFile(folderHandle);
+    if(!latest) return;
+    let file = await latest.getFile();
+    let freshData = JSON.parse(await file.text());
+    let merged = calcularFusion(freshData);
+    aplicarDatosFusionados(merged);
+    ultimoSnapshotSincronizado = tomarSnapshotActual();
+    persistData();
+    renderAll();
+    updateStorageBar();
+    updateBackupCircle();
+  }catch(e){ console.log('Refresco automático no disponible:', e.message); }
+}
 async function initFolderSync(){
   if(!window.showDirectoryPicker){ showToast("⚠️ API no soportada"); return false; }
   let handle=await loadFolderHandle();
@@ -1461,6 +1558,7 @@ async function initFolderSync(){
       await loadFromFile(latest);
     } else {
       console.log("El archivo de la carpeta no está más actualizado que los datos locales; se conservan los datos locales y se re-sincroniza el archivo.");
+      try{ ultimoSnapshotSincronizado = JSON.parse(await file.text()); }catch(e){} // usa el archivo recién leído como base de fusión para este primer guardado también
       await saveCurrentToFolder(folderHandle, true);
     }
   } else console.log("No se encontró backup previo");
@@ -1738,14 +1836,50 @@ function materialesConMovimientoEnObra(){
 }
 function renderDashboard(){ let conMovimiento=materialesConMovimientoEnObra(); let materialesObra=DB.materials.filter(m=>conMovimiento.has(m.id)); let crit=materialesObra.filter(m=>getStock(m.id)<=m.min).length, warn=materialesObra.filter(m=>getStock(m.id)>m.min&&getStock(m.id)<=m.min*1.5).length; document.getElementById('statsGrid').innerHTML=`<div class="stat-card"><h3>Total Materiales</h3><div class="value">${materialesObra.length}</div></div><div class="stat-card"><h3>⚠️ Stock Crítico</h3><div class="value" style="color:var(--danger)">${crit}</div></div><div class="stat-card"><h3>🟠 Precaución</h3><div class="value" style="color:var(--warning)">${warn}</div></div>`; let recent=[...DB.entries.filter(e=>e.obraId===DB.obraActivaId).map(e=>({...e,type:'ENTRADA'})),...DB.exits.filter(e=>e.obraId===DB.obraActivaId).map(e=>({...e,type:'SALIDA'}))].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10); document.getElementById('recentMovements').innerHTML=recent.map(r=>{let m=DB.materials.find(x=>x.id===r.materialId); return`<tr><td>${r.date}</td><td><span class="alert-badge ${r.type==='ENTRADA'?'alert-ok':'alert-warning'}">${r.type}</span></td><td>${m?.name||'?'}</td><td>${r.quantity}</td><td>${r.guide||r.ot}</td></tr>`;}).join('')||'<tr><td colspan="5">Sin movimientos</td></tr>'; }
 function checkCriticalAlerts(){ let conMovimiento=materialesConMovimientoEnObra(); let c=DB.materials.filter(m=>conMovimiento.has(m.id) && getStock(m.id)<=m.min); document.getElementById('alertContainer').innerHTML=c.length?`<div class="alert-panel"><h3>🚨 Stock Crítico (${c.length})</h3><div class="critical-list"><ul>${c.map(m=>`<li><div class="prod-info"><span class="code-tag">${m.code}</span><span>${m.name}</span></div><div class="prod-meta"><span class="alert-badge alert-critical">${getStock(m.id)} ${m.unit}</span></div></li>`).join('')}</ul></div></div>`:''; }
-function renderCatalog(){ let f=PAG.catalog.filter; let data=f?DB.materials.filter(m=>m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f)):DB.materials; let page=data.slice((PAG.catalog.page-1)*PAG.perPage, PAG.catalog.page*PAG.perPage); document.getElementById('catalogTable').innerHTML=page.map(m=>`<tr><td><span class="code-tag">${m.code}</span></td><td>${m.name}</td><td>${m.category}</td><td>${m.unit}</td><td>${getStock(m.id)}</td><td>${m.min}</td><td><div class="row-actions"><button class="btn btn-outline btn-sm" onclick="openEditMaterial('${m.id}')">✏️</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteMaterial('${m.id}')">🗑️</button></div></td></tr>`).join('')||'<tr><td colspan="7">Sin resultados</td></tr>'; renderPag('paginationCatalog',data.length,PAG.catalog.page,'catalog'); }
+function renderCatalog(){ let f=PAG.catalog.filter; let data=f?DB.materials.filter(m=>m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f)):DB.materials; let page=data.slice((PAG.catalog.page-1)*PAG.perPage, PAG.catalog.page*PAG.perPage); document.getElementById('catalogTable').innerHTML=page.map(m=>`<tr><td><span class="code-tag">${m.code}</span></td><td>${m.name}</td><td>${m.category}</td><td>${m.unit}</td><td>${getStock(m.id)}</td><td>${m.min}</td><td>${puedeTrabajarEn('catalogo')?`<div class="row-actions"><button class="btn btn-outline btn-sm" onclick="openEditMaterial('${m.id}')">✏️</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteMaterial('${m.id}')">🗑️</button></div>`:'—'}</td></tr>`).join('')||'<tr><td colspan="7">Sin resultados</td></tr>'; renderPag('paginationCatalog',data.length,PAG.catalog.page,'catalog'); }
 function renderInventory(){ let f=PAG.inventory.filter; let conMovimiento=materialesConMovimientoEnObra(); let baseObra=DB.materials.filter(m=>conMovimiento.has(m.id)); let data=f?baseObra.filter(m=>m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f)):baseObra; let page=data.slice((PAG.inventory.page-1)*PAG.perPage, PAG.inventory.page*PAG.perPage); let getStatus=m=>{let s=getStock(m.id); if(s<=m.min)return{label:'CRÍTICO',class:'alert-critical'}; if(s<=m.min*1.5)return{label:'PRECAUCIÓN',class:'alert-warning'}; return{label:'OK',class:'alert-ok'};}; document.getElementById('inventoryTable').innerHTML=page.map(m=>{let s=getStatus(m); return`<tr class="${s.class==='alert-critical'?'row-critical':s.class==='alert-warning'?'row-warning':''}"><td><span class="code-tag">${m.code}</span></td><td>${m.name}</td><td>${m.category}</td><td>${m.unit}</td><td><strong>${getStock(m.id)}</strong></td><td>${m.min}</td><td><span class="alert-badge ${s.class}">${s.label}</span></td></tr>`;}).join('')||'<tr><td colspan="7">Sin resultados</td></tr>'; renderPag('paginationInventory',data.length,PAG.inventory.page,'inventory'); }
-function renderEntries(){ let f=PAG.entries.filter; let base=DB.entries.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.guide.toLowerCase().includes(f)||(e.receiver||'').toLowerCase().includes(f)||(e.receiverName||'').toLowerCase().includes(f);}):base; let page=data.slice((PAG.entries.page-1)*PAG.perPage, PAG.entries.page*PAG.perPage); document.getElementById('entriesTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let receptorTxt=e.receiverName?`${e.receiverName} — ${e.receiver||''}`:(e.receiver||''); let pend=m?pendienteBodegaCentralPorCodigo(DB.obraActivaId, m.code):0; let pendTxt=pend>0.0001?`<span style="color:var(--danger); font-weight:600;">${pend} ${m?.unit||''}</span>`:'—'; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}</td><td style="white-space:nowrap; color:var(--success); font-weight:600;">+${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.guide||'').replace(/"/g,'&quot;')}">${e.guide}</td><td style="white-space:nowrap;" title="${receptorTxt.replace(/"/g,'&quot;')}">${receptorTxt}</td><td style="white-space:nowrap;">${pendTxt}</td><td style="white-space:nowrap;">${e.guiaArchivoId?`<button class="btn btn-outline btn-sm" title="Ver guía adjunta" onclick="verArchivo('${e.guiaArchivoId}')">📎</button> `:''}<button class="btn btn-outline btn-sm" onclick="openEditEntry('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteEntry('${e.id}')">🗑️</button></td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationEntries',data.length,PAG.entries.page,'entries'); }
-function renderExits(){ let f=PAG.exits.filter; let base=DB.exits.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f);}):base; let page=data.slice((PAG.exits.page-1)*PAG.perPage, PAG.exits.page*PAG.perPage); document.getElementById('exitsTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let puntoObs=e.observaciones?`<span onclick="verObservacionSalida('${e.id}')" title="Ver observación" style="display:inline-block;width:8px;height:8px;background:var(--danger);border-radius:50%;cursor:pointer;margin-left:6px;vertical-align:middle;"></span>`:''; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}${puntoObs}</td><td style="white-space:nowrap; color:var(--danger); font-weight:600;">-${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.ot||'').replace(/"/g,'&quot;')}">${e.ot}</td><td style="white-space:nowrap;">${e.specialty}</td><td style="white-space:nowrap;" title="${(e.requester||'').replace(/"/g,'&quot;')}">${e.requester}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEditExit('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteExit('${e.id}')">🗑️</button></td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationExits',data.length,PAG.exits.page,'exits'); }
+function renderEntries(){ let f=PAG.entries.filter; let base=DB.entries.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.guide.toLowerCase().includes(f)||(e.receiver||'').toLowerCase().includes(f)||(e.receiverName||'').toLowerCase().includes(f);}):base; let page=data.slice((PAG.entries.page-1)*PAG.perPage, PAG.entries.page*PAG.perPage); document.getElementById('entriesTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let receptorTxt=e.receiverName?`${e.receiverName} — ${e.receiver||''}`:(e.receiver||''); let pend=m?pendienteBodegaCentralPorCodigo(DB.obraActivaId, m.code):0; let pendTxt=pend>0.0001?`<span style="color:var(--danger); font-weight:600;">${pend} ${m?.unit||''}</span>`:'—'; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}</td><td style="white-space:nowrap; color:var(--success); font-weight:600;">+${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.guide||'').replace(/"/g,'&quot;')}">${e.guide}</td><td style="white-space:nowrap;" title="${receptorTxt.replace(/"/g,'&quot;')}">${receptorTxt}</td><td style="white-space:nowrap;">${pendTxt}</td><td style="white-space:nowrap;">${e.guiaArchivoId?`<button class="btn btn-outline btn-sm" title="Ver guía adjunta" onclick="verArchivo('${e.guiaArchivoId}')">📎</button> `:''}${puedeTrabajarEn('entradas')?`<button class="btn btn-outline btn-sm" onclick="openEditEntry('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteEntry('${e.id}')">🗑️</button>`:''}</td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationEntries',data.length,PAG.entries.page,'entries'); }
+function renderExits(){ let f=PAG.exits.filter; let base=DB.exits.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f);}):base; let page=data.slice((PAG.exits.page-1)*PAG.perPage, PAG.exits.page*PAG.perPage); document.getElementById('exitsTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let puntoObs=e.observaciones?`<span onclick="verObservacionSalida('${e.id}')" title="Ver observación" style="display:inline-block;width:8px;height:8px;background:var(--danger);border-radius:50%;cursor:pointer;margin-left:6px;vertical-align:middle;"></span>`:''; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}${puntoObs}</td><td style="white-space:nowrap; color:var(--danger); font-weight:600;">-${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.ot||'').replace(/"/g,'&quot;')}">${e.ot}</td><td style="white-space:nowrap;">${e.specialty}</td><td style="white-space:nowrap;" title="${(e.requester||'').replace(/"/g,'&quot;')}">${e.requester}</td><td style="white-space:nowrap;">${puedeTrabajarEn('salidas')?`<button class="btn btn-outline btn-sm" onclick="openEditExit('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteExit('${e.id}')">🗑️</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationExits',data.length,PAG.exits.page,'exits'); }
 function verObservacionEntrada(id){ let e=DB.entries.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
 function verObservacionSalida(id){ let e=DB.exits.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
-function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button><tr></tr>`).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
+function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>{ let filaClave=u.role==='admin'?`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button></td></tr>`:`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="pass-${u.user}" placeholder="Nueva clave"></td><td><button class="btn btn-primary btn-sm" onclick="updatePass('${u.user}')">💾</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarUsuario('${u.user}')">🗑️</button></td></tr>`; if(u.role==='admin') return filaClave; let permisos=Array.isArray(u.modulosPermitidos)?u.modulosPermitidos:[]; let casilleros=MODULOS_CON_TRABAJO.map(m=>`<label style="display:inline-flex;align-items:center;gap:0.3rem;margin-right:0.9rem;font-size:0.8rem;font-weight:400;"><input type="checkbox" ${permisos.includes(m.key)?'checked':''} onchange="toggleModuloPermitido('${u.user}','${m.key}',this.checked)"> ${m.label}</label>`).join(''); let filaPermisos=`<tr><td colspan="3" style="padding:0.2rem 0 0.9rem;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Puede trabajar (agregar/editar/borrar) en:</div>${casilleros}</td></tr>`; return filaClave+filaPermisos; }).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
 function updatePass(k){ let v=document.getElementById(`pass-${k}`).value.trim(); if(!v) return showToast('Escribe una clave'); DB.users.find(x=>x.user===k).pass=v; saveToStorage(); showToast('Clave actualizada'); }
+function toggleModuloPermitido(userKey, modulo, activo){
+  let u = DB.users.find(x=>x.user===userKey);
+  if(!u) return;
+  if(!Array.isArray(u.modulosPermitidos)) u.modulosPermitidos=[];
+  if(activo){ if(!u.modulosPermitidos.includes(modulo)) u.modulosPermitidos.push(modulo); }
+  else{ u.modulosPermitidos = u.modulosPermitidos.filter(m=>m!==modulo); }
+  saveToStorage();
+  if(currentUser && currentUser.user===userKey) applyRoleAccess();
+  showToast(`✅ Permisos de ${userKey} actualizados`);
+}
+function agregarUsuario(){
+  let login = document.getElementById('newUserLogin').value.trim().toLowerCase();
+  let name = document.getElementById('newUserName').value.trim();
+  let role = document.getElementById('newUserRole').value.trim();
+  let pass = document.getElementById('newUserPass').value.trim();
+  if(!login) return showToast('Escribe un usuario (login)');
+  if(!/^[a-z0-9_.-]+$/.test(login)) return showToast('❌ El usuario solo puede tener letras, números, punto, guion o guion bajo, sin espacios');
+  if(DB.users.some(u=>u.user.toLowerCase()===login)) return showToast('❌ Ese usuario ya existe');
+  if(!name) return showToast('Escribe un nombre');
+  if(!role) return showToast('Escribe un cargo');
+  if(role.toLowerCase()==='admin') return showToast('❌ El cargo "admin" queda reservado — no se puede usar para un usuario nuevo');
+  if(!pass) return showToast('Escribe una clave');
+  DB.users.push({ user: login, pass, name, role, modulosPermitidos: ['entradas','salidas'] });
+  document.getElementById('newUserLogin').value=''; document.getElementById('newUserName').value=''; document.getElementById('newUserRole').value=''; document.getElementById('newUserPass').value='';
+  saveToStorage();
+  showToast(`✅ Usuario "${login}" creado`);
+}
+function eliminarUsuario(userKey){
+  let u = DB.users.find(x=>x.user===userKey);
+  if(!u) return;
+  if(u.role==='admin') return showToast('❌ No se puede eliminar el usuario Admin');
+  if(!confirm(`¿Eliminar el usuario "${u.user}"? Esto no borra ninguna entrada ni salida que haya registrado, solo su acceso.`)) return;
+  DB.users = DB.users.filter(x=>x.user!==userKey);
+  saveToStorage();
+  showToast(`✅ Usuario "${userKey}" eliminado`);
+}
 // "PorIndice": reciben la posición dentro de la lista (no el texto) para no depender de escapar
 // comillas u otros caracteres especiales que el usuario haya escrito en una unidad/categoría/etc.
 function editConfigItemPorIndice(type,idx){ let oldVal=DB[type][idx]; if(oldVal===undefined) return; let n=prompt(`Editar "${oldVal}"`,oldVal); if(n && n.trim() && n!==oldVal){ if(DB[type].includes(n.trim())) return showToast('Ya existe'); DB[type][idx]=n.trim(); saveToStorage(); renderConfig(); populateDropdowns(); showToast(`Editado a "${n.trim()}"`); } }
@@ -2336,14 +2470,42 @@ function registrarEnMiObra(code, name, unit, cantidadSugerida){
 }
 function saveExit(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('exitMaterialId').value, qty=parseInt(document.getElementById('exitQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); if(getStock(matId)<qty) return showToast('❌ Stock insuficiente'); addStock(matId,-qty); DB.exits.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, ot:document.getElementById('exitOT').value, date:document.getElementById('exitDate').value, specialty:document.getElementById('exitSpecialty').value, requester:document.getElementById('exitRequester').value, observaciones:document.getElementById('exitObservaciones').value.trim() }); saveToStorage(); closeModal('exitModal'); showToast('✅ Salida registrada'); }
 function toggleTheme(){ let next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; document.documentElement.setAttribute('data-theme',next); DB.config.theme=next; saveToStorage(); }
-function applyRoleAccess(){ document.querySelectorAll('.admin-sup-only').forEach(el=>{ if(currentUser.role==='bodega') el.classList.add('hidden'); }); }
-function setupTabs(){ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',function(e){ let t=this.dataset.tab; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); this.classList.add('active'); document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden')); document.getElementById(`tab-${t}`).classList.remove('hidden'); if(['inventario','catalogo','entradas','salidas'].includes(t)){ let pk=t==='catalogo'?'catalog':t==='inventario'?'inventory':t==='entradas'?'entries':'exits'; PAG[pk].page=1; PAG[pk].filter=''; let inp=document.getElementById(t==='catalogo'?'searchCatalog':t==='inventario'?'searchInventory':t==='entradas'?'searchEntries':'searchExits'); if(inp) inp.value=''; if(pk==='catalog') renderCatalog(); else if(pk==='inventory') renderInventory(); else if(pk==='entries') renderEntries(); else if(pk==='exits') renderExits(); } populateDropdowns(); })); }
+// Módulos que quedan ocultos por completo salvo para Admin (Configuración, Seguimiento Excel).
+const MODULOS_SOLO_ADMIN = ['config','seguimiento'];
+// Módulos que todos ven siempre, pero cuyo botón de agregar/editar/borrar depende del permiso
+// que Admin le haya marcado a ese usuario en Configuración.
+const MODULOS_CON_TRABAJO = [
+  {key:'catalogo', label:'Catálogo'},
+  {key:'entradas', label:'Entradas'},
+  {key:'salidas', label:'Salidas'},
+  {key:'archivos', label:'Archivos'}
+];
+function puedeTrabajarEn(modulo){
+  if(!currentUser) return false;
+  if(currentUser.role==='admin') return true;
+  return Array.isArray(currentUser.modulosPermitidos) && currentUser.modulosPermitidos.includes(modulo);
+}
+function applyRoleAccess(){
+  if(!currentUser) return;
+  document.querySelectorAll('.admin-sup-only').forEach(el=>{ el.classList.toggle('hidden', currentUser.role!=='admin'); });
+  const setVisible = (id, visible) => { let el=document.getElementById(id); if(el) el.classList.toggle('hidden', !visible); };
+  setVisible('materialForm', puedeTrabajarEn('catalogo'));
+  setVisible('btnNuevaEntrada', puedeTrabajarEn('entradas'));
+  setVisible('btnLimpiarEntradas', puedeTrabajarEn('entradas'));
+  setVisible('btnNuevaSalida', puedeTrabajarEn('salidas'));
+  setVisible('btnLimpiarSalidas', puedeTrabajarEn('salidas'));
+  setVisible('archivosUploadZone', puedeTrabajarEn('archivos'));
+}
+function setupTabs(){ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',function(e){ let t=this.dataset.tab; if(MODULOS_SOLO_ADMIN.includes(t) && (!currentUser || currentUser.role!=='admin')) return; document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); this.classList.add('active'); document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden')); document.getElementById(`tab-${t}`).classList.remove('hidden'); if(['inventario','catalogo','entradas','salidas'].includes(t)){ let pk=t==='catalogo'?'catalog':t==='inventario'?'inventory':t==='entradas'?'entries':'exits'; PAG[pk].page=1; PAG[pk].filter=''; let inp=document.getElementById(t==='catalogo'?'searchCatalog':t==='inventario'?'searchInventory':t==='entradas'?'searchEntries':'searchExits'); if(inp) inp.value=''; if(pk==='catalog') renderCatalog(); else if(pk==='inventory') renderInventory(); else if(pk==='entries') renderEntries(); else if(pk==='exits') renderExits(); } populateDropdowns(); })); }
 function updateBrand(){ let obra=getObraActiva(); let nombre=obra?obra.nombre:DB.config.projectName; let tag=obra?(obra.tag||''):DB.config.projectTag; let logo=obra?obra.logo:DB.config.logo; document.getElementById('headerProjectName').innerText=nombre; document.getElementById('headerProjectTag').innerText=tag; let img=document.getElementById('headerLogo'); if(logo){ img.src=logo; img.classList.remove('hidden'); }else img.classList.add('hidden'); document.getElementById('configProjectName').value=nombre; document.getElementById('configProjectTag').value=tag; }
 function saveProjectConfig(){ let f=document.getElementById('configLogo').files[0]; let obra=getObraActiva(); if(!obra) return showToast('❌ No hay obra activa'); let save=(logo=obra.logo)=>{ obra.nombre=document.getElementById('configProjectName').value.trim()||'Inventario de Faena'; obra.tag=document.getElementById('configProjectTag').value.trim()||''; obra.logo=logo; saveToStorage(); renderObraSelectors(); showToast('✅ Identidad guardada'); }; if(f){ if(f.size>500000) return showToast('⚠️ Imagen >500KB'); let r=new FileReader(); r.onload=e=>save(e.target.result); r.readAsDataURL(f); } else save(); }
-function loadFromStorage(){ let saved=localStorage.getItem('faena_inventory_v2'); if(saved) try{ let p=JSON.parse(saved); Object.keys(p).forEach(k=>{ if(DB.hasOwnProperty(k)) DB[k]=p[k]; }); }catch(e){} if(DB.materials.length===0 && DB.obras.length===0){ DB.materials=[{id:'m1',code:'HVAC-01',name:'Cable THHN 12AWG',category:'Eléctrico',unit:'mt',min:100},{id:'m2',code:'DUCT-02',name:'Ducto Galv 1/2"',category:'Perfiles de Fe',unit:'m2',min:10}]; } migrateToMultiObra(); migrateExcelIntegration(); persistData(); cleanOrphanedRecords(true); updateBackupCircle(); }
+function loadFromStorage(){ let saved=localStorage.getItem('faena_inventory_v2'); if(saved) try{ let p=JSON.parse(saved); Object.keys(p).forEach(k=>{ if(DB.hasOwnProperty(k)) DB[k]=p[k]; }); }catch(e){} if(DB.materials.length===0 && DB.obras.length===0){ DB.materials=[{id:'m1',code:'HVAC-01',name:'Cable THHN 12AWG',category:'Eléctrico',unit:'mt',min:100},{id:'m2',code:'DUCT-02',name:'Ducto Galv 1/2"',category:'Perfiles de Fe',unit:'m2',min:10}]; } migrateToMultiObra(); migrateExcelIntegration(); migrateModulosPermitidos(); persistData(); cleanOrphanedRecords(true); updateBackupCircle(); }
 function runSplash(){ let bar=document.getElementById('splashProgress'), w=0; let int=setInterval(()=>{ w+=Math.random()*25; if(w>100) w=100; bar.style.width=w+'%'; document.getElementById('splashStatus').innerText=w<100?'Preparando auto-backup...':'Listo.'; if(w>=100){ clearInterval(int); setTimeout(()=>{ document.getElementById('splashScreen').style.display='none'; document.getElementById('loginScreen').style.display='flex'; },400); } },200); }
-async function handleLogin(e){ e.preventDefault(); let u=document.getElementById('loginUser').value, p=document.getElementById('loginPass').value; let user=DB.users.find(x=>x.user===u&&x.pass===p); if(!user){ document.getElementById('loginError').style.display='block'; return; } currentUser=user; document.getElementById('loginScreen').style.display='none'; document.getElementById('appContainer').style.display='flex'; document.getElementById('userNameDisplay').innerText=`${user.name} (${user.role})`; applyRoleAccess(); populateDropdowns(); updateBrand(); await loadArchivosFromStorage(); await loadExcelSeguimientoFromStorage(); await initFolderSync(); if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} } if(autoSaveInterval) clearInterval(autoSaveInterval); autoSaveInterval=setInterval(()=>persistData(),1500); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); folderAutoSaveInterval=setInterval(()=>{ if(folderHandle) saveCurrentToFolder(folderHandle,true); },60000); renderAll(); updateStorageBar(); updateBackupCircle(); revisarExcelActualizado(false).catch(()=>{}); }
-async function logout(){ if(autoSaveInterval) clearInterval(autoSaveInterval); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); if(folderHandle) await saveCurrentToFolder(folderHandle,true); currentUser=null; document.getElementById('appContainer').style.display='none'; document.getElementById('loginScreen').style.display='flex'; document.getElementById('loginForm').reset(); showToast('✅ Sesión cerrada. Backup guardado.'); }
+async function handleLogin(e){ e.preventDefault(); let u=document.getElementById('loginUser').value, p=document.getElementById('loginPass').value; let user=DB.users.find(x=>x.user===u&&x.pass===p); if(!user){ document.getElementById('loginError').style.display='block'; return; } currentUser=user; document.getElementById('loginScreen').style.display='none'; document.getElementById('appContainer').style.display='flex'; document.getElementById('userNameDisplay').innerText=`${user.name} (${user.role})`; applyRoleAccess(); populateDropdowns(); updateBrand(); await loadArchivosFromStorage(); await loadExcelSeguimientoFromStorage(); await initFolderSync(); if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} } if(autoSaveInterval) clearInterval(autoSaveInterval); autoSaveInterval=setInterval(()=>persistData(),1500); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); folderAutoSaveInterval=setInterval(()=>{ if(folderHandle) saveCurrentToFolder(folderHandle,true); },60000); if(folderRefreshInterval) clearInterval(folderRefreshInterval); folderRefreshInterval=setInterval(()=>{ if(folderHandle && currentUser) refrescarDesdeArchivo(); },120000); document.addEventListener('visibilitychange', refrescarSiVuelveElFoco); window.addEventListener('focus', refrescarSiVuelveElFoco); renderAll(); updateStorageBar(); updateBackupCircle(); revisarExcelActualizado(false).catch(()=>{}); }
+// Refresca al volver a esta pestaña/ventana (además del refresco automático cada 2 minutos), para
+// que el stock y los datos se vean al día apenas alguien vuelve a mirar la app.
+function refrescarSiVuelveElFoco(){ if(document.visibilityState==='hidden') return; if(folderHandle && currentUser) refrescarDesdeArchivo(); }
+async function logout(){ if(autoSaveInterval) clearInterval(autoSaveInterval); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); if(folderRefreshInterval) clearInterval(folderRefreshInterval); document.removeEventListener('visibilitychange', refrescarSiVuelveElFoco); window.removeEventListener('focus', refrescarSiVuelveElFoco); if(folderHandle) await saveCurrentToFolder(folderHandle,true); ultimoSnapshotSincronizado=null; currentUser=null; document.getElementById('appContainer').style.display='none'; document.getElementById('loginScreen').style.display='flex'; document.getElementById('loginForm').reset(); showToast('✅ Sesión cerrada. Backup guardado.'); }
 function init(){ runSplash(); loadFromStorage(); setupTabs(); document.getElementById('loginForm').addEventListener('submit',handleLogin); document.querySelectorAll('input[type="date"]').forEach(i=>i.valueAsDate=new Date()); document.documentElement.setAttribute('data-theme',DB.config.theme); document.addEventListener('click',e=>{ if(!e.target.closest('.smart-search')) document.querySelectorAll('.smart-dropdown').forEach(d=>d.classList.remove('show')); }); window.addEventListener('beforeunload',()=>{ if(currentUser) persistData(); }); }
 init();
 </script>
