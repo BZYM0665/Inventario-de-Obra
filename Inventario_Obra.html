@@ -637,7 +637,7 @@
                 <div><label>Clave inicial</label><input type="text" id="newUserPass" placeholder="Clave"></div>
               </div>
               <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:1.2rem;" onclick="agregarUsuario()">➕ Agregar Usuario</button>
-              <table style="width:100%;"><thead><tr><th>Usuario</th><th>Nombre</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
+              <table style="width:100%;"><thead><tr><th>Usuario / Cargo</th><th>Nombre</th><th>Nueva Clave</th><th>Acción</th></tr></thead><tbody id="usersTable"></tbody></table>
             </div>
           </details>
         </div>
@@ -712,7 +712,7 @@
           </details>
         </div>
 
-        <div class="footer-credits">Sistema Auto-Backup | Creado por Roberto Muñoz I | Supervisor HVAC | Build: 2026-08-11-p</div>
+        <div class="footer-credits">Sistema Auto-Backup | Creado por Roberto Muñoz I | Supervisor HVAC | Build: 2026-08-31-p2</div>
       </section>
     </main>
   </div>
@@ -1266,6 +1266,7 @@ async function compressPdfFile(file, maxDimPx, quality) {
 }
 
 async function handleArchivoUpload(input, linkSelectId) {
+  if (!puedeTrabajarEn('archivos')) { showToast('❌ No tienes permiso para esta acción'); input.value = ''; return; }
   if (!DB.obraActivaId) { showToast('❌ No hay obra activa. Selecciona una obra primero.'); input.value = ''; return; }
   let files = Array.from(input.files || []);
   if (!files.length) return;
@@ -1328,6 +1329,7 @@ function verArchivo(id) {
 }
 
 async function eliminarArchivo(id) {
+  if (!puedeTrabajarEn('archivos')) return showToast('❌ No tienes permiso para esta acción');
   if (!confirm('¿Eliminar esta guía?')) return;
   ARCHIVOS_GUIA = ARCHIVOS_GUIA.filter(a => a.id !== id);
   await persistArchivos();
@@ -1445,8 +1447,9 @@ async function getLatestBackupFile(handle){ try{ return await handle.getFileHand
 async function loadFromFile(fileHandle){ 
   try{ 
     let file=await fileHandle.getFile(), text=await file.text(), data=JSON.parse(text); 
-    if(data.users || data.materials){ 
-      Object.assign(DB,data); 
+    if(data.users || data.materials){
+      Object.assign(DB,data);
+      DB.users = filtrarUsuariosEliminados(DB.users); // no resucitar usuarios que este equipo ya eliminó
       if(!DB.obras) DB.obras=[]; if(!DB.stockPorObra) DB.stockPorObra={};
       if(DB.archivosGuia){ ARCHIVOS_GUIA=DB.archivosGuia; delete DB.archivosGuia; await persistArchivos(); }
       migrateToMultiObra();
@@ -1483,6 +1486,7 @@ function calcularFusion(freshData){
     let cambioLocal = JSON.stringify(currentData[k]) !== JSON.stringify(ultimoSnapshotSincronizado[k]);
     merged[k] = cambioLocal ? currentData[k] : (Object.prototype.hasOwnProperty.call(freshData,k) ? freshData[k] : currentData[k]);
   });
+  if(merged.users) merged.users = filtrarUsuariosEliminados(merged.users); // no resucitar usuarios eliminados en este equipo
   return merged;
 }
 // Aplica un objeto ya fusionado de vuelta a la memoria (DB + ARCHIVOS_GUIA), para que la pantalla
@@ -1800,6 +1804,7 @@ function importJSON(input) {
       const data = JSON.parse(e.target.result);
       if (data.users) {
         Object.assign(DB, data);
+        DB.users = filtrarUsuariosEliminados(DB.users); // no resucitar usuarios que este equipo ya eliminó
         if(!DB.obras) DB.obras=[]; if(!DB.stockPorObra) DB.stockPorObra={};
         if(DB.archivosGuia){ ARCHIVOS_GUIA=DB.archivosGuia; delete DB.archivosGuia; await persistArchivos(); }
         migrateToMultiObra();
@@ -1842,23 +1847,39 @@ function renderEntries(){ let f=PAG.entries.filter; let base=DB.entries.filter(e
 function renderExits(){ let f=PAG.exits.filter; let base=DB.exits.filter(e=>e.obraId===DB.obraActivaId); let data=f?base.filter(e=>{let m=DB.materials.find(x=>x.id===e.materialId); return m&&(m.name.toLowerCase().includes(f)||m.code.toLowerCase().includes(f))||e.ot.toLowerCase().includes(f)||e.specialty.toLowerCase().includes(f);}):base; let page=data.slice((PAG.exits.page-1)*PAG.perPage, PAG.exits.page*PAG.perPage); document.getElementById('exitsTable').innerHTML=page.map(e=>{let m=DB.materials.find(x=>x.id===e.materialId); let puntoObs=e.observaciones?`<span onclick="verObservacionSalida('${e.id}')" title="Ver observación" style="display:inline-block;width:8px;height:8px;background:var(--danger);border-radius:50%;cursor:pointer;margin-left:6px;vertical-align:middle;"></span>`:''; return`<tr><td style="white-space:nowrap;">${e.date}</td><td style="white-space:nowrap;"><span class="code-tag">${m?.code||'?'}</span></td><td style="white-space:nowrap;" title="${(m?.name||'?').replace(/"/g,'&quot;')}">${m?.name||'?'}${puntoObs}</td><td style="white-space:nowrap; color:var(--danger); font-weight:600;">-${e.quantity}</td><td style="white-space:nowrap;">${m?.unit||''}</td><td style="white-space:nowrap;" title="${(e.ot||'').replace(/"/g,'&quot;')}">${e.ot}</td><td style="white-space:nowrap;">${e.specialty}</td><td style="white-space:nowrap;" title="${(e.requester||'').replace(/"/g,'&quot;')}">${e.requester}</td><td style="white-space:nowrap;">${puedeTrabajarEn('salidas')?`<button class="btn btn-outline btn-sm" onclick="openEditExit('${e.id}')">✏️</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="deleteExit('${e.id}')">🗑️</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="9">Sin resultados</td></tr>'; renderPag('paginationExits',data.length,PAG.exits.page,'exits'); }
 function verObservacionEntrada(id){ let e=DB.entries.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
 function verObservacionSalida(id){ let e=DB.exits.find(x=>x.id===id); if(e && e.observaciones) alert('📝 Observación:\n\n'+e.observaciones); }
-function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>{ let campoClave=`<div style="display:flex;gap:0.3rem;align-items:center;"><input type="password" id="pass-${u.user}" value="${(u.pass||'').replace(/"/g,'&quot;')}" placeholder="Clave"><button type="button" class="btn btn-outline btn-sm" title="Ver/editar clave" onclick="toggleVerClave('${u.user}')">✏️</button></div>`; let filaClave=u.role==='admin'?`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td>${campoClave}</td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button></td></tr>`:`<tr><td>${u.user} (${u.role})</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td>${campoClave}</td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarUsuario('${u.user}')">🗑️</button></td></tr>`; if(u.role==='admin') return filaClave; let permisos=Array.isArray(u.modulosPermitidos)?u.modulosPermitidos:[]; let casilla=(m)=>`<label style="display:inline-flex;align-items:center;gap:0.3rem;margin-right:0.9rem;font-size:0.8rem;font-weight:400;"><input type="checkbox" ${permisos.includes(m.key)?'checked':''} onchange="toggleModuloPermitido('${u.user}','${m.key}',this.checked)"> ${m.label}</label>`; let casillerosTrabajo=MODULOS_TRABAJO.map(casilla).join(''); let casillerosAcceso=MODULOS_ACCESO.map(casilla).join(''); let filaPermisos=`<tr><td colspan="4" style="padding:0.2rem 0 0.9rem;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Puede trabajar (agregar/editar/borrar) en:</div>${casillerosTrabajo}<div style="font-size:0.75rem;color:var(--text-muted);margin:0.6rem 0 0.35rem;">Acceso completo a (si no se marca, ni siquiera puede entrar a mirar):</div>${casillerosAcceso}</td></tr>`; return filaClave+filaPermisos; }).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
+function renderConfig(){ document.getElementById('usersTable').innerHTML=DB.users.map(u=>{ let campoClave=`<div style="display:flex;gap:0.3rem;align-items:center;"><input type="password" id="pass-${u.user}" value="${(u.pass||'').replace(/"/g,'&quot;')}" placeholder="Clave"><button type="button" class="btn btn-outline btn-sm" title="Ver/editar clave" onclick="toggleVerClave('${u.user}')">✏️</button></div>`; let campoUsuarioCargo=u.role==='admin'?`${u.user} (${u.role})`:`<input type="text" id="login-${u.user}" value="${(u.user||'').replace(/"/g,'&quot;')}" placeholder="usuario" style="margin-bottom:0.3rem;"><input type="text" id="role-${u.user}" value="${(u.role||'').replace(/"/g,'&quot;')}" placeholder="cargo">`; let filaClave=u.role==='admin'?`<tr><td>${campoUsuarioCargo}</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td>${campoClave}</td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button></td></tr>`:`<tr><td>${campoUsuarioCargo}</td><td><input type="text" id="name-${u.user}" value="${(u.name||'').replace(/"/g,'&quot;')}" placeholder="Nombre"></td><td>${campoClave}</td><td><button class="btn btn-primary btn-sm" onclick="guardarUsuario('${u.user}')">💾</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="eliminarUsuario('${u.user}')">🗑️</button></td></tr>`; if(u.role==='admin') return filaClave; let permisos=Array.isArray(u.modulosPermitidos)?u.modulosPermitidos:[]; let casilla=(m)=>`<label style="display:inline-flex;align-items:center;gap:0.3rem;margin-right:0.9rem;font-size:0.8rem;font-weight:400;"><input type="checkbox" ${permisos.includes(m.key)?'checked':''} onchange="toggleModuloPermitido('${u.user}','${m.key}',this.checked)"> ${m.label}</label>`; let casillerosTrabajo=MODULOS_TRABAJO.map(casilla).join(''); let casillerosAcceso=MODULOS_ACCESO.map(casilla).join(''); let filaPermisos=`<tr><td colspan="4" style="padding:0.2rem 0 0.9rem;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem;">Puede trabajar (agregar/editar/borrar) en:</div>${casillerosTrabajo}<div style="font-size:0.75rem;color:var(--text-muted);margin:0.6rem 0 0.35rem;">Acceso completo a (si no se marca, ni siquiera puede entrar a mirar):</div>${casillerosAcceso}</td></tr>`; return filaClave+filaPermisos; }).join(''); const renderTagList=(id,list,type)=>{ let cont=document.getElementById(id); if(cont) cont.innerHTML=list.map((item,i)=>`<span class="tag">${item}<button class="edit-btn" onclick="editConfigItemPorIndice('${type}',${i})">✏️</button><button class="delete-btn" onclick="removeConfigItemPorIndice('${type}',${i})">&times;</button></span>`).join(''); }; renderTagList('unitsList',DB.units,'units'); renderTagList('categoriesList',DB.categories,'categories'); renderTagList('receiversList',DB.receivers,'receivers'); renderTagList('specialtiesList',DB.specialties,'specialties'); let cfgUsersCount=document.getElementById('cfgUsersCount'); if(cfgUsersCount) cfgUsersCount.innerText=`${DB.users.length} usuario${DB.users.length===1?'':'s'}`; let cfgUnitsCount=document.getElementById('cfgUnitsCount'); if(cfgUnitsCount) cfgUnitsCount.innerText=`${DB.units.length} unidad${DB.units.length===1?'':'es'}`; let cfgCategoriesCount=document.getElementById('cfgCategoriesCount'); if(cfgCategoriesCount) cfgCategoriesCount.innerText=`${DB.categories.length} categoría${DB.categories.length===1?'':'s'}`; }
 function guardarUsuario(k){
   let u = DB.users.find(x=>x.user===k);
   if(!u) return;
   let nombreInput = document.getElementById(`name-${k}`);
   let passInput = document.getElementById(`pass-${k}`);
+  let loginInput = document.getElementById(`login-${k}`);
+  let roleInput = document.getElementById(`role-${k}`);
   let nuevoNombre = nombreInput ? nombreInput.value.trim() : '';
   let nuevaClave = passInput ? passInput.value.trim() : '';
+  let nuevoLogin = loginInput ? loginInput.value.trim().toLowerCase() : u.user;
+  let nuevoCargo = roleInput ? roleInput.value.trim() : u.role;
   if(!nuevoNombre) return showToast('❌ El nombre no puede quedar vacío');
   if(!nuevaClave) return showToast('❌ La clave no puede quedar vacía');
+  if(loginInput){
+    if(!nuevoLogin) return showToast('❌ El usuario (login) no puede quedar vacío');
+    if(!/^[a-z0-9_.-]+$/.test(nuevoLogin)) return showToast('❌ El usuario solo puede tener letras, números, punto, guion o guion bajo, sin espacios');
+    if(nuevoLogin!==k && DB.users.some(x=>x.user.toLowerCase()===nuevoLogin)) return showToast('❌ Ese usuario ya existe');
+  }
+  if(roleInput){
+    if(!nuevoCargo) return showToast('❌ El cargo no puede quedar vacío');
+    if(nuevoCargo.toLowerCase()==='admin') return showToast('❌ El cargo "admin" queda reservado');
+  }
   let cambios = [];
   if(nuevoNombre !== u.name){ u.name = nuevoNombre; cambios.push('nombre'); }
   if(nuevaClave !== u.pass){ u.pass = nuevaClave; cambios.push('clave'); }
+  if(roleInput && nuevoCargo !== u.role){ u.role = nuevoCargo; cambios.push('cargo'); }
+  let loginCambio = loginInput && nuevoLogin !== u.user;
+  if(loginCambio){ u.user = nuevoLogin; cambios.push('usuario'); }
   if(cambios.length===0) return showToast('No hay cambios que guardar');
   saveToStorage();
-  if(currentUser && currentUser.user===k){ currentUser.name = u.name; let disp=document.getElementById('userNameDisplay'); if(disp) disp.innerText=`${u.name} (${u.role})`; }
-  showToast(`✅ Usuario "${k}" actualizado (${cambios.join(' y ')})`);
+  if(currentUser && currentUser.user===k){ if(loginCambio) currentUser.user = u.user; currentUser.name = u.name; currentUser.role = u.role; let disp=document.getElementById('userNameDisplay'); if(disp) disp.innerText=`${u.name} (${u.role})`; }
+  showToast(`✅ Usuario actualizado (${cambios.join(', ')})`);
 }
 function toggleVerClave(k){
   let input = document.getElementById(`pass-${k}`);
@@ -1892,12 +1913,41 @@ function agregarUsuario(){
   saveToStorage();
   showToast(`✅ Usuario "${login}" creado`);
 }
+// ======================== TUMBA DE USUARIOS ELIMINADOS (evita que un usuario borrado "resucite") ========================
+// Se guarda aparte, directo en localStorage, independiente del ciclo de guardado de DB: así el
+// borrado sobrevive aunque el archivo de la carpeta compartida (OneDrive) todavía no se haya
+// actualizado con este cambio (por ejemplo, si se cierra la app antes de que corra el guardado
+// automático de la carpeta, o si otro equipo escribe al mismo archivo antes de enterarse del
+// borrado). Cualquier lista de usuarios que llegue desde un archivo (propio o compartido) pasa
+// por este filtro antes de aplicarse.
+const USUARIOS_ELIMINADOS_KEY = 'faena_usuarios_eliminados_v1';
+const DIAS_RETENCION_TUMBA = 90; // tiempo de sobra para que cualquier equipo/backup se ponga al día
+function getUsuariosEliminadosTumba(){
+  try{
+    let raw = localStorage.getItem(USUARIOS_ELIMINADOS_KEY);
+    let lista = raw ? JSON.parse(raw) : [];
+    let limite = Date.now() - DIAS_RETENCION_TUMBA*24*60*60*1000;
+    return Array.isArray(lista) ? lista.filter(t=>t.ts >= limite) : [];
+  }catch(e){ return []; }
+}
+function registrarUsuarioEliminado(login){
+  let lista = getUsuariosEliminadosTumba().filter(t=>t.user!==login);
+  lista.push({ user: login, ts: Date.now() });
+  try{ localStorage.setItem(USUARIOS_ELIMINADOS_KEY, JSON.stringify(lista)); }catch(e){}
+}
+function filtrarUsuariosEliminados(users){
+  if(!Array.isArray(users)) return users;
+  let tumba = new Set(getUsuariosEliminadosTumba().map(t=>t.user));
+  if(tumba.size===0) return users;
+  return users.filter(u=>!tumba.has(u.user));
+}
 function eliminarUsuario(userKey){
   let u = DB.users.find(x=>x.user===userKey);
   if(!u) return;
   if(u.role==='admin') return showToast('❌ No se puede eliminar el usuario Admin');
   if(!confirm(`¿Eliminar el usuario "${u.user}"? Esto no borra ninguna entrada ni salida que haya registrado, solo su acceso.`)) return;
   DB.users = DB.users.filter(x=>x.user!==userKey);
+  registrarUsuarioEliminado(userKey);
   saveToStorage();
   showToast(`✅ Usuario "${userKey}" eliminado`);
 }
@@ -1912,11 +1962,12 @@ function filterMaterials(context,query){ let dd=document.getElementById(`${conte
 function handleSearch(type){ clearTimeout(searchTimeout); searchTimeout=setTimeout(()=>{ let filter=document.getElementById(type==='catalog'?'searchCatalog':type==='inventory'?'searchInventory':type==='entries'?'searchEntries':'searchExits').value.toLowerCase(); PAG[type].filter=filter; PAG[type].page=1; if(type==='catalog') renderCatalog(); else if(type==='inventory') renderInventory(); else if(type==='entries') renderEntries(); else if(type==='exits') renderExits(); },300); }
 function renderPag(containerId,total,curr,pageType){ let el=document.getElementById(containerId); if(!el||total===0) return el.innerHTML=''; let pages=Math.ceil(total/PAG.perPage); let html=`<div class="pagination-info">Mostrando ${(curr-1)*PAG.perPage+1}-${Math.min(curr*PAG.perPage,total)} de ${total}</div><div class="pagination-controls"><button class="page-btn" ${curr===1?'disabled':''} onclick="setPag('${pageType}',${curr-1})">‹ Anterior</button>`; for(let i=1;i<=pages;i++){ if(pages>7&&i>3&&i<pages-1){ if(i===4) html+=`<span>...</span>`; continue; } html+=`<button class="page-btn ${i===curr?'active':''}" onclick="setPag('${pageType}',${i})">${i}</button>`; } html+=`<button class="page-btn" ${curr===pages?'disabled':''} onclick="setPag('${pageType}',${curr+1})">Siguiente ›</button></div>`; el.innerHTML=html; }
 function setPag(t,p){ PAG[t].page=p; if(t==='catalog') renderCatalog(); else if(t==='inventory') renderInventory(); else if(t==='entries') renderEntries(); else if(t==='exits') renderExits(); }
-function deleteEntry(id){ if(!confirm('¿Eliminar entrada?')) return; let idx=DB.entries.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.entries[idx]; addStock(e.materialId,-e.quantity); DB.entries.splice(idx,1); saveToStorage(); showToast('Entrada eliminada'); } }
-function deleteExit(id){ if(!confirm('¿Eliminar salida?')) return; let idx=DB.exits.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.exits[idx]; addStock(e.materialId,e.quantity); DB.exits.splice(idx,1); saveToStorage(); showToast('Salida eliminada'); } }
-function clearAllEntries(){ if(!confirm('¿Eliminar TODAS las entradas de esta obra?')) return; DB.entries.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,-e.quantity); }); DB.entries=DB.entries.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las entradas de la obra eliminadas'); }
-function clearAllExits(){ if(!confirm('¿Eliminar TODAS las salidas de esta obra?')) return; DB.exits.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,e.quantity); }); DB.exits=DB.exits.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las salidas de la obra eliminadas'); }
+function deleteEntry(id){ if(!puedeTrabajarEn('entradas')) return showToast('❌ No tienes permiso para esta acción'); if(!confirm('¿Eliminar entrada?')) return; let idx=DB.entries.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.entries[idx]; addStock(e.materialId,-e.quantity); DB.entries.splice(idx,1); saveToStorage(); showToast('Entrada eliminada'); } }
+function deleteExit(id){ if(!puedeTrabajarEn('salidas')) return showToast('❌ No tienes permiso para esta acción'); if(!confirm('¿Eliminar salida?')) return; let idx=DB.exits.findIndex(e=>e.id===id); if(idx!==-1){ let e=DB.exits[idx]; addStock(e.materialId,e.quantity); DB.exits.splice(idx,1); saveToStorage(); showToast('Salida eliminada'); } }
+function clearAllEntries(){ if(!puedeTrabajarEn('entradas')) return showToast('❌ No tienes permiso para esta acción'); if(!confirm('¿Eliminar TODAS las entradas de esta obra?')) return; DB.entries.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,-e.quantity); }); DB.entries=DB.entries.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las entradas de la obra eliminadas'); }
+function clearAllExits(){ if(!puedeTrabajarEn('salidas')) return showToast('❌ No tienes permiso para esta acción'); if(!confirm('¿Eliminar TODAS las salidas de esta obra?')) return; DB.exits.filter(e=>e.obraId===DB.obraActivaId).forEach(e=>{ addStock(e.materialId,e.quantity); }); DB.exits=DB.exits.filter(e=>e.obraId!==DB.obraActivaId); saveToStorage(); showToast('Todas las salidas de la obra eliminadas'); }
 function agregarMaterial(){
+  if(!puedeTrabajarEn('catalogo')){ showToast('❌ No tienes permiso para esta acción'); return; }
   var code = document.getElementById('matCode').value.trim().toUpperCase();
   if(!code){ alert('Ingresa un código'); return; }
   var name = document.getElementById('matName').value.trim();
@@ -1980,13 +2031,13 @@ function agregarMaterial(){
   }, 200);
 }
 function saveMaterial(e){ if(e) e.preventDefault(); agregarMaterial(); }
-function deleteMaterial(id){ if(confirm('¿Eliminar material del catálogo?')){ DB.materials=DB.materials.filter(m=>m.id!==id); saveToStorage(); showToast('🗑️ Eliminado'); } }
+function deleteMaterial(id){ if(!puedeTrabajarEn('catalogo')) return showToast('❌ No tienes permiso para esta acción'); if(confirm('¿Eliminar material del catálogo?')){ DB.materials=DB.materials.filter(m=>m.id!==id); saveToStorage(); showToast('🗑️ Eliminado'); } }
 function openEditMaterial(id){ let m=DB.materials.find(x=>x.id===id); if(!m) return; document.getElementById('editMaterialId').value=m.id; document.getElementById('editMaterialCode').value=m.code; document.getElementById('editMaterialName').value=m.name; populateDropdowns(); document.getElementById('editMaterialCategory').value=m.category; document.getElementById('editMaterialUnit').value=m.unit; document.getElementById('editMaterialMin').value=m.min; openModal('editMaterialModal'); }
-function saveEditMaterial(e){ e.preventDefault(); let id=document.getElementById('editMaterialId').value; let m=DB.materials.find(x=>x.id===id); if(!m) return; let newCode=document.getElementById('editMaterialCode').value.trim().toUpperCase(); if(newCode!==m.code && DB.materials.some(x=>x.code===newCode)) return showToast('❌ Código duplicado'); m.code=newCode; m.name=document.getElementById('editMaterialName').value.trim(); m.category=document.getElementById('editMaterialCategory').value; m.unit=document.getElementById('editMaterialUnit').value; m.min=parseInt(document.getElementById('editMaterialMin').value)||0; saveToStorage(); closeModal('editMaterialModal'); showToast('✅ Material actualizado'); }
+function saveEditMaterial(e){ e.preventDefault(); if(!puedeTrabajarEn('catalogo')) return showToast('❌ No tienes permiso para esta acción'); let id=document.getElementById('editMaterialId').value; let m=DB.materials.find(x=>x.id===id); if(!m) return; let newCode=document.getElementById('editMaterialCode').value.trim().toUpperCase(); if(newCode!==m.code && DB.materials.some(x=>x.code===newCode)) return showToast('❌ Código duplicado'); m.code=newCode; m.name=document.getElementById('editMaterialName').value.trim(); m.category=document.getElementById('editMaterialCategory').value; m.unit=document.getElementById('editMaterialUnit').value; m.min=parseInt(document.getElementById('editMaterialMin').value)||0; saveToStorage(); closeModal('editMaterialModal'); showToast('✅ Material actualizado'); }
 function openEditEntry(id){ let e=DB.entries.find(x=>x.id===id); if(!e) return; let m=DB.materials.find(x=>x.id===e.materialId); document.getElementById('editEntryId').value=e.id; document.getElementById('editEntryCode').value=m?.code; document.getElementById('editEntryMat').value=m?.name; document.getElementById('editEntryQty').value=e.quantity; document.getElementById('editEntryGuide').value=e.guide; populateDropdowns(); document.getElementById('editEntryReceiverName').value=e.receiverName||''; document.getElementById('editEntryReceiver').value=e.receiver||''; document.getElementById('editEntryObservaciones').value=e.observaciones||''; openModal('editEntryModal'); }
-function saveEditEntry(e){ e.preventDefault(); let id=document.getElementById('editEntryId').value, idx=DB.entries.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.entries[idx].quantity, newQty=parseInt(document.getElementById('editEntryQty').value); addStock(DB.entries[idx].materialId, newQty-oldQty); DB.entries[idx].quantity=newQty; DB.entries[idx].guide=document.getElementById('editEntryGuide').value; DB.entries[idx].receiverName=document.getElementById('editEntryReceiverName').value.trim(); let cargoVal=document.getElementById('editEntryReceiver').value; if(cargoVal) DB.entries[idx].receiver=cargoVal; DB.entries[idx].observaciones=document.getElementById('editEntryObservaciones').value.trim(); saveToStorage(); closeModal('editEntryModal'); showToast('✏️ Entrada corregida'); }
+function saveEditEntry(e){ e.preventDefault(); if(!puedeTrabajarEn('entradas')) return showToast('❌ No tienes permiso para esta acción'); let id=document.getElementById('editEntryId').value, idx=DB.entries.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.entries[idx].quantity, newQty=parseInt(document.getElementById('editEntryQty').value); addStock(DB.entries[idx].materialId, newQty-oldQty); DB.entries[idx].quantity=newQty; DB.entries[idx].guide=document.getElementById('editEntryGuide').value; DB.entries[idx].receiverName=document.getElementById('editEntryReceiverName').value.trim(); let cargoVal=document.getElementById('editEntryReceiver').value; if(cargoVal) DB.entries[idx].receiver=cargoVal; DB.entries[idx].observaciones=document.getElementById('editEntryObservaciones').value.trim(); saveToStorage(); closeModal('editEntryModal'); showToast('✏️ Entrada corregida'); }
 function openEditExit(id){ let e=DB.exits.find(x=>x.id===id); if(!e) return; let m=DB.materials.find(x=>x.id===e.materialId); document.getElementById('editExitId').value=e.id; document.getElementById('editExitCode').value=m?.code; document.getElementById('editExitMat').value=m?.name; document.getElementById('editExitQty').value=e.quantity; document.getElementById('editExitOT').value=e.ot; populateDropdowns(); document.getElementById('editExitSpecialty').value=e.specialty; document.getElementById('editExitObservaciones').value=e.observaciones||''; openModal('editExitModal'); }
-function saveEditExit(e){ e.preventDefault(); let id=document.getElementById('editExitId').value, idx=DB.exits.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.exits[idx].quantity, newQty=parseInt(document.getElementById('editExitQty').value), matId=DB.exits[idx].materialId; let projectedStock=getStock(matId)+oldQty-newQty; if(projectedStock<0) return showToast('❌ Stock negativo'); addStock(matId, oldQty-newQty); DB.exits[idx].quantity=newQty; DB.exits[idx].ot=document.getElementById('editExitOT').value; DB.exits[idx].specialty=document.getElementById('editExitSpecialty').value; DB.exits[idx].observaciones=document.getElementById('editExitObservaciones').value.trim(); saveToStorage(); closeModal('editExitModal'); showToast('✏️ Salida corregida'); }
+function saveEditExit(e){ e.preventDefault(); if(!puedeTrabajarEn('salidas')) return showToast('❌ No tienes permiso para esta acción'); let id=document.getElementById('editExitId').value, idx=DB.exits.findIndex(x=>x.id===id); if(idx===-1) return; let oldQty=DB.exits[idx].quantity, newQty=parseInt(document.getElementById('editExitQty').value), matId=DB.exits[idx].materialId; let projectedStock=getStock(matId)+oldQty-newQty; if(projectedStock<0) return showToast('❌ Stock negativo'); addStock(matId, oldQty-newQty); DB.exits[idx].quantity=newQty; DB.exits[idx].ot=document.getElementById('editExitOT').value; DB.exits[idx].specialty=document.getElementById('editExitSpecialty').value; DB.exits[idx].observaciones=document.getElementById('editExitObservaciones').value.trim(); saveToStorage(); closeModal('editExitModal'); showToast('✏️ Salida corregida'); }
 function cleanOrphanedRecords(silent=false){ let validIds=new Set(DB.materials.map(m=>m.id)); let ce=DB.entries.filter(e=>validIds.has(e.materialId)).length, cx=DB.exits.filter(e=>validIds.has(e.materialId)).length; DB.entries=DB.entries.filter(e=>validIds.has(e.materialId)); DB.exits=DB.exits.filter(e=>validIds.has(e.materialId)); DB.obras.forEach(obra=>{ let bucket=ensureObraStockBucket(obra.id); DB.materials.forEach(m=>{ let ent=DB.entries.filter(e=>e.materialId===m.id && e.obraId===obra.id).reduce((s,e)=>s+e.quantity,0); let sal=DB.exits.filter(e=>e.materialId===m.id && e.obraId===obra.id).reduce((s,e)=>s+e.quantity,0); bucket[m.id]=ent-sal; }); }); saveToStorage(); if(!silent) showToast(`✅ ${ce+cx>0?ce+cx+' huérfanos eliminados':'Sin huérfanos'}`); }
 function fullResetData(){ if(confirm('⚠️ BORRAR TODOS LOS DATOS?')){ localStorage.removeItem('faena_inventory_v2'); localStorage.removeItem('faena_archivos_v1'); indexedDB.deleteDatabase('FaenaFolderDB'); indexedDB.deleteDatabase('FaenaArchivosDB'); indexedDB.deleteDatabase('FaenaExcelSeguimientoDB'); location.reload(); } }
 function getReporteData(){
@@ -2476,7 +2527,7 @@ function updateBackupCircle(){ let circle=document.getElementById('backupStatusC
 function showBackupInfo(){ let last=DB.config.lastBackupDate?new Date(DB.config.lastBackupDate):null; if(!last) showToast("No hay backup en carpeta."); else showToast(`Último backup: ${last.toLocaleDateString()}`); }
 function openModal(id){ document.getElementById(id).classList.add('active'); populateDropdowns(); }
 function closeModal(id){ document.getElementById(id).classList.remove('active'); document.querySelector(`#${id} form`)?.reset(); document.querySelectorAll('.smart-dropdown').forEach(d=>d.classList.remove('show')); document.querySelectorAll('.selected-display').forEach(d=>d.innerText='Ninguno seleccionado'); }
-async function saveEntry(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('entryMaterialId').value, qty=parseInt(document.getElementById('entryQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); addStock(matId,qty); let archivoSel=document.getElementById('entryArchivoSelect'); DB.entries.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, guide:document.getElementById('entryGuide').value, date:document.getElementById('entryDate').value, receiver:document.getElementById('entryReceiver').value, receiverName:document.getElementById('entryReceiverName').value.trim(), observaciones:document.getElementById('entryObservaciones').value.trim(), guiaArchivoId: archivoSel&&archivoSel.value?archivoSel.value:null });
+async function saveEntry(e){ e.preventDefault(); if(!puedeTrabajarEn('entradas')) return showToast('❌ No tienes permiso para esta acción'); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('entryMaterialId').value, qty=parseInt(document.getElementById('entryQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); addStock(matId,qty); let archivoSel=document.getElementById('entryArchivoSelect'); DB.entries.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, guide:document.getElementById('entryGuide').value, date:document.getElementById('entryDate').value, receiver:document.getElementById('entryReceiver').value, receiverName:document.getElementById('entryReceiverName').value.trim(), observaciones:document.getElementById('entryObservaciones').value.trim(), guiaArchivoId: archivoSel&&archivoSel.value?archivoSel.value:null });
   saveToStorage(); closeModal('entryModal'); showToast('✅ Entrada registrada'); }
 function registrarEnMiObra(code, name, unit, cantidadSugerida){
   let codeNorm = normalizarCodigo(code);
@@ -2489,7 +2540,7 @@ function registrarEnMiObra(code, name, unit, cantidadSugerida){
   document.getElementById('entryQty').value = Math.max(1, Math.round(cantidadSugerida));
   showToast('📦 Ajusta la cantidad real, completa nombre y cargo, y guarda');
 }
-function saveExit(e){ e.preventDefault(); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('exitMaterialId').value, qty=parseInt(document.getElementById('exitQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); if(getStock(matId)<qty) return showToast('❌ Stock insuficiente'); addStock(matId,-qty); DB.exits.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, ot:document.getElementById('exitOT').value, date:document.getElementById('exitDate').value, specialty:document.getElementById('exitSpecialty').value, requester:document.getElementById('exitRequester').value, observaciones:document.getElementById('exitObservaciones').value.trim() }); saveToStorage(); closeModal('exitModal'); showToast('✅ Salida registrada'); }
+function saveExit(e){ e.preventDefault(); if(!puedeTrabajarEn('salidas')) return showToast('❌ No tienes permiso para esta acción'); if(!DB.obraActivaId) return showToast('❌ No hay obra activa. Crea una obra primero.'); let matId=document.getElementById('exitMaterialId').value, qty=parseInt(document.getElementById('exitQty').value), mat=DB.materials.find(m=>m.id===matId); if(!mat||isNaN(qty)||qty<1) return showToast('❌ Selecciona material y cantidad'); if(getStock(matId)<qty) return showToast('❌ Stock insuficiente'); addStock(matId,-qty); DB.exits.push({ id:Date.now().toString(), obraId:DB.obraActivaId, materialId:matId, quantity:qty, ot:document.getElementById('exitOT').value, date:document.getElementById('exitDate').value, specialty:document.getElementById('exitSpecialty').value, requester:document.getElementById('exitRequester').value, observaciones:document.getElementById('exitObservaciones').value.trim() }); saveToStorage(); closeModal('exitModal'); showToast('✅ Salida registrada'); }
 function toggleTheme(){ let next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; document.documentElement.setAttribute('data-theme',next); DB.config.theme=next; saveToStorage(); }
 // Módulos que TODOS ven siempre (la pestaña nunca se esconde), pero cuyo botón de
 // agregar/editar/borrar depende del permiso marcado en Configuración. Sin el permiso: se ve
