@@ -712,7 +712,7 @@
           </details>
         </div>
 
-        <div class="footer-credits">Sistema Auto-Backup | Creado por Roberto Muñoz I | Supervisor HVAC | Build: 2026-08-31-p2</div>
+        <div class="footer-credits">Sistema Auto-Backup | Creado por Roberto Muñoz I | Supervisor HVAC | Build: 2026-08-31-p3</div>
       </section>
     </main>
   </div>
@@ -918,6 +918,11 @@ let excelFileHandle = null;
 // (por si otra persona las cambió mientras tanto). null = todavía no hay una base de comparación.
 let ultimoSnapshotSincronizado = null;
 let folderRefreshInterval = null;
+// Candado: evita que dos sincronizaciones con la carpeta (guardado automático, revisión
+// automática, o al volver a la pestaña) corran al mismo tiempo. Sin esto, una sincronización que
+// empezó a leer el archivo ANTES de que se agregara un dato nuevo podía terminar DESPUÉS y pisar
+// ese dato recién agregado con la versión vieja que había leído.
+let sincronizandoCarpeta = false;
 const PAG = { perPage:25, catalog:{page:1,filter:''}, inventory:{page:1,filter:''}, entries:{page:1,filter:''}, exits:{page:1,filter:''} };
 
 // ======================== MULTI-OBRA: helpers de stock aislado ========================
@@ -1498,8 +1503,16 @@ function aplicarDatosFusionados(merged){
   Object.assign(DB, dbFusionado);
   if(archivosFusionados) ARCHIVOS_GUIA = archivosFusionados;
 }
+// Ciclo único de sincronización: lee el archivo compartido, fusiona con lo local, actualiza la
+// pantalla y guarda de vuelta. Antes había dos funciones separadas (una que guardaba y otra que
+// solo revisaba) disparadas por relojes distintos, lo que dejaba una ventana en la que dos
+// sincronizaciones podían cruzarse y una más lenta terminaba pisando con datos viejos algo que se
+// acababa de agregar. El candado `sincronizandoCarpeta` evita que eso vuelva a pasar: si ya hay
+// una sincronización en curso, cualquier otra que se dispare mientras tanto se salta sin hacer nada.
 async function saveCurrentToFolder(handle,silent=false){
   if(!handle) return false;
+  if(sincronizandoCarpeta) return false;
+  sincronizandoCarpeta = true;
   try{
     let fileHandle=await handle.getFileHandle('Backup_Faena_Latest.json',{create:true});
     let merged;
@@ -1523,25 +1536,14 @@ async function saveCurrentToFolder(handle,silent=false){
     if(!silent) showToast("💾 Backup guardado (archivo único)");
     return true;
   }catch(e){ if(!silent) showToast("Error al guardar"); return false; }
+  finally{ sincronizandoCarpeta = false; }
 }
-// Relee el archivo desde disco y trae a la pantalla lo que haya cambiado ahí (por ejemplo, si otra
-// persona registró una salida), sin pisar lo que esta sesión tenga sin guardar todavía. No escribe
-// nada al archivo — solo actualiza lo que se ve. Se usa en el refresco automático cada 2 minutos.
+// Antes releía el archivo por separado sin guardar; ahora usa el mismo ciclo único de arriba
+// (saveCurrentToFolder, en silencio) para que nunca haya dos procesos de sincronización distintos
+// corriendo a la vez. Se usa al volver a la pestaña y, si quedara algún disparador extra, aquí mismo.
 async function refrescarDesdeArchivo(){
   if(!folderHandle) return;
-  try{
-    let latest = await getLatestBackupFile(folderHandle);
-    if(!latest) return;
-    let file = await latest.getFile();
-    let freshData = JSON.parse(await file.text());
-    let merged = calcularFusion(freshData);
-    aplicarDatosFusionados(merged);
-    ultimoSnapshotSincronizado = tomarSnapshotActual();
-    persistData();
-    renderAll();
-    updateStorageBar();
-    updateBackupCircle();
-  }catch(e){ console.log('Refresco automático no disponible:', e.message); }
+  await saveCurrentToFolder(folderHandle, true);
 }
 async function initFolderSync(){
   if(!window.showDirectoryPicker){ showToast("⚠️ API no soportada"); return false; }
@@ -2581,7 +2583,7 @@ function updateBrand(){ let obra=getObraActiva(); let nombre=obra?obra.nombre:DB
 function saveProjectConfig(){ let f=document.getElementById('configLogo').files[0]; let obra=getObraActiva(); if(!obra) return showToast('❌ No hay obra activa'); let save=(logo=obra.logo)=>{ obra.nombre=document.getElementById('configProjectName').value.trim()||'Inventario de Faena'; obra.tag=document.getElementById('configProjectTag').value.trim()||''; obra.logo=logo; saveToStorage(); renderObraSelectors(); showToast('✅ Identidad guardada'); }; if(f){ if(f.size>500000) return showToast('⚠️ Imagen >500KB'); let r=new FileReader(); r.onload=e=>save(e.target.result); r.readAsDataURL(f); } else save(); }
 function loadFromStorage(){ let saved=localStorage.getItem('faena_inventory_v2'); if(saved) try{ let p=JSON.parse(saved); Object.keys(p).forEach(k=>{ if(DB.hasOwnProperty(k)) DB[k]=p[k]; }); }catch(e){} if(DB.materials.length===0 && DB.obras.length===0){ DB.materials=[{id:'m1',code:'HVAC-01',name:'Cable THHN 12AWG',category:'Eléctrico',unit:'mt',min:100},{id:'m2',code:'DUCT-02',name:'Ducto Galv 1/2"',category:'Perfiles de Fe',unit:'m2',min:10}]; } migrateToMultiObra(); migrateExcelIntegration(); migrateModulosPermitidos(); persistData(); cleanOrphanedRecords(true); updateBackupCircle(); }
 function runSplash(){ let bar=document.getElementById('splashProgress'), w=0; let int=setInterval(()=>{ w+=Math.random()*25; if(w>100) w=100; bar.style.width=w+'%'; document.getElementById('splashStatus').innerText=w<100?'Preparando auto-backup...':'Listo.'; if(w>=100){ clearInterval(int); setTimeout(()=>{ document.getElementById('splashScreen').style.display='none'; document.getElementById('loginScreen').style.display='flex'; },400); } },200); }
-async function handleLogin(e){ e.preventDefault(); let u=document.getElementById('loginUser').value, p=document.getElementById('loginPass').value; let user=DB.users.find(x=>x.user===u&&x.pass===p); if(!user){ document.getElementById('loginError').style.display='block'; return; } currentUser=user; document.getElementById('loginScreen').style.display='none'; document.getElementById('appContainer').style.display='flex'; document.getElementById('userNameDisplay').innerText=`${user.name} (${user.role})`; applyRoleAccess(); populateDropdowns(); updateBrand(); await loadArchivosFromStorage(); await loadExcelSeguimientoFromStorage(); await initFolderSync(); if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} } if(autoSaveInterval) clearInterval(autoSaveInterval); autoSaveInterval=setInterval(()=>persistData(),1500); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); folderAutoSaveInterval=setInterval(()=>{ if(folderHandle) saveCurrentToFolder(folderHandle,true); },60000); if(folderRefreshInterval) clearInterval(folderRefreshInterval); folderRefreshInterval=setInterval(()=>{ if(folderHandle && currentUser) refrescarDesdeArchivo(); },120000); document.addEventListener('visibilitychange', refrescarSiVuelveElFoco); window.addEventListener('focus', refrescarSiVuelveElFoco); renderAll(); updateStorageBar(); updateBackupCircle(); revisarExcelActualizado(false).catch(()=>{}); }
+async function handleLogin(e){ e.preventDefault(); let u=document.getElementById('loginUser').value, p=document.getElementById('loginPass').value; let user=DB.users.find(x=>x.user===u&&x.pass===p); if(!user){ document.getElementById('loginError').style.display='block'; return; } currentUser=user; document.getElementById('loginScreen').style.display='none'; document.getElementById('appContainer').style.display='flex'; document.getElementById('userNameDisplay').innerText=`${user.name} (${user.role})`; applyRoleAccess(); populateDropdowns(); updateBrand(); await loadArchivosFromStorage(); await loadExcelSeguimientoFromStorage(); await initFolderSync(); if(navigator.storage && navigator.storage.persist){ try{ await navigator.storage.persist(); }catch(e){} } if(autoSaveInterval) clearInterval(autoSaveInterval); autoSaveInterval=setInterval(()=>persistData(),1500); if(folderAutoSaveInterval) clearInterval(folderAutoSaveInterval); folderAutoSaveInterval=setInterval(()=>{ if(folderHandle) saveCurrentToFolder(folderHandle,true); },60000); if(folderRefreshInterval) clearInterval(folderRefreshInterval); document.addEventListener('visibilitychange', refrescarSiVuelveElFoco); window.addEventListener('focus', refrescarSiVuelveElFoco); renderAll(); updateStorageBar(); updateBackupCircle(); revisarExcelActualizado(false).catch(()=>{}); }
 // Refresca al volver a esta pestaña/ventana (además del refresco automático cada 2 minutos), para
 // que el stock y los datos se vean al día apenas alguien vuelve a mirar la app.
 function refrescarSiVuelveElFoco(){ if(document.visibilityState==='hidden') return; if(folderHandle && currentUser) refrescarDesdeArchivo(); }
